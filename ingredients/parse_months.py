@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import random
+import shutil
 
 from sacred import Ingredient
 
@@ -10,13 +11,18 @@ ingredient = Ingredient('parse_months')
 def cfg():
     start_at_x = 510
     cut_y = 124
-    file_path = '/home/q1/Python/dl/data/uniklinik_augen'
+    file_path = 'path_to_raw_images'
 
 @ingredient.capture
 def parse_months_run(start_at_x, cut_y):
     print(start_at_x, cut_y)
     targets = ['dmenr', 'dmer']
     for target in targets:
+        # delete all files in parsed and images folder
+        if os.path.exists('data/parsed/%s' % target):
+            shutil.rmtree('data/parsed/%s' % target)
+        if os.path.exists('data/images/%s' % target):
+            shutil.rmtree('data/images/%s' % target)
         parse_target(target)
 
 from keras_preprocessing.image import array_to_img
@@ -166,3 +172,4 @@ if __name__ == '__main__':
 
     for target in targets:
         parse_target(target)
+

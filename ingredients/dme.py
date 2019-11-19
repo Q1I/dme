@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import os
 import random
+import pandas as pd
 
 from keras.layers import *
 from keras.models import Sequential, Model
@@ -16,11 +17,12 @@ def cfg():
     num_examples = 1
     input_size = 30
     generator_batch_size = 32
-    numpy_source_path = '/home/q1/Python/dl/data/uniklinik_augen/'
+    numpy_source_path = 'path_to_numpy_matrices'
     dropout_rate = 0.2
     filters = 32
     fit_batch_size = 32
     epochs = 50
+    excel_path = 'path_to_excel_data_file'
 
 
 # skip layer, siehe https://arxiv.org/pdf/1512.03385.pdf, Abbildung 2
@@ -155,11 +157,11 @@ class EyesNumpySource(object):
         self.files[target] = []
         self.examples[target] = []
 
-        path = '%s%s/%s' % (self.path, target, 'train')
+        path = '%s/%s/%s' % (self.path, target, 'train')
         for file_index, file in enumerate(os.listdir(path)):
             self.files[target] += [path + '/' + file]
             self._load(target, file_index) # TODO
-        path = '%s%s/%s' % (self.path, target, 'test')
+        path = '%s/%s/%s' % (self.path, target, 'test')
         for file_index, file in enumerate(os.listdir(path)):
             self.files[target] += [path + '/' + file]
             self._load(target, file_index) # TODO
@@ -230,6 +232,12 @@ class EyesMonthsDataGenerator(object):
                     M3[i][batch_idx, :, :, 0] = n3[i]
 
         return M0 + M3, Y
+
+# extras
+@ingredient.capture
+def baseline(excel_path):
+    df = pd.read_excel(excel_path, usecols=[11], skiprows=1)
+    return df.values
 
 @ingredient.capture
 def dme_run(fit_batch_size, epochs):
