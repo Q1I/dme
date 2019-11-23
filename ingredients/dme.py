@@ -4,9 +4,9 @@ import os
 import random
 import pandas as pd
 
-from keras.layers import *
-from keras.models import Sequential, Model
-from keras.layers.normalization import BatchNormalization
+from tensorflow.keras.layers import *
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.utils import *
 
 from sacred import Ingredient
 
@@ -58,7 +58,7 @@ def down(x, dropout_rate, filters):
 # - pro Zeitpunkt werden die Encodings 
 # - von den Encodings werden die jweiligen Minimal- und Maximalwerte genommen, wenn es mehr als 1 Zeitpunkt ist
 # - die Encodings pro Zeitpunkt werden konkateniert und in den classifier gegeben
-class EyesMonthsClassifier(object):
+class EyesMonthsClassifier(object) :
     @ingredient.capture
     def __init__(self, num_examples, input_size):
         self.num_examples = num_examples
@@ -69,10 +69,11 @@ class EyesMonthsClassifier(object):
         month3 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
 
         # hier würde man dann zusätzliche Informationen erstellen:
-        # extra = Input((num_extra,))
+        num_extra = 1
+        extra = Input((num_extra,))
 
         encoder = self._create_encoder()
-        classifier = self._create_classifier(input_size=512)
+        classifier = self._create_classifier(input_size=512 + num_extra)
 
         if self.num_examples > 1:
             enc0 = [encoder(inp) for inp in month0]
@@ -90,16 +91,18 @@ class EyesMonthsClassifier(object):
         enc = concatenate([enc0, enc3])
 
         # Extra-Informationen werden dann hier konkateniert:
-        # enc = concatenate([enc, extra])
+        enc = concatenate([enc, extra])
 
         out = classifier(enc)
-        
-        model = Model(month0 + month3, out, name='eye_sum_model')
+        # out = concatenate([classifier, extra])
+        # out = Dense(2, activation='softmax')(out)
+
+        model = Model(month0 + month3 + [extra], out, name='eye_sum_model')
         model.compile(loss='mse', optimizer='nadam', metrics=['categorical_accuracy'])
 
-        self.inputs_val = month0 + month3
-        self.val_output = [out]
-        self.vector_model = Model(month0 + month3, out)
+        # self.inputs_val = month0 + month3 + [extra]
+        # self.val_output = [out]
+        # self.vector_model = Model(month0 + month3 + [extra], out)
         # bzw: Model(month0 + month3 + [extra], out)
 
         return model
@@ -111,10 +114,10 @@ class EyesMonthsClassifier(object):
         
         var = Dropout(0.1)(inp)
 
-        while var._keras_shape[1] > 2:
+        while var.shape[1] > 2:
             var = down(var)
 
-        print(var._keras_shape)
+        print(var.shape)
         var = Flatten()(var)
 
         var = Dropout(0.1)(var)
@@ -154,41 +157,48 @@ class EyesNumpySource(object):
             print('Loaded %i files for %s and got %i examples!' % (len(self.files[target]), target, len(self.examples[target])))
 
     def _load_files(self, target):
-        self.files[target] = []
-        self.examples[target] = []
+        self.files[target] = {}
+        self.examples[target] = {}
 
         path = '%s/%s/%s' % (self.path, target, 'train')
         for file_index, file in enumerate(os.listdir(path)):
-            self.files[target] += [path + '/' + file]
-            self._load(target, file_index) # TODO
+            file_name = file.split('.')[0]
+            self.files[target][file.split('.')[0]] = path + '/' + file
+            self._load(target, file_name) # TODO
         path = '%s/%s/%s' % (self.path, target, 'test')
         for file_index, file in enumerate(os.listdir(path)):
-            self.files[target] += [path + '/' + file]
-            self._load(target, file_index) # TODO
+            file_name = file.split('.')[0]
+            self.files[target][file_name] = path + '/' + file
+            self._load(target, file_name) # TODO
 
     def _resize(self, mat):
         return [cv2.resize(mat[i], dsize=(self.input_size, self.input_size)) for i in range(mat.shape[0])]
 
-    def _load(self, target, file_index):
-        mat = np.load(self.files[target][file_index])
+    def _load(self, target, id):
+        mat = np.load(self.files[target][id])
         if np.max(mat) > 1:
             mat = mat / 255
 
         images = self._resize(mat)
-        self.examples[target] += images
+        # self.examples[target][id] = images
+        self.examples[target][id] = mat
 
-    def get_pos_examples(self):
-        return self._get_examples(self.examples['dmer'])
+    def get_pos_example(self, index):
+        keys = list(self.examples['dmer'].keys())
+        id = keys[index] 
+        return self._get_examples(self.examples['dmer'][id], id)
 
-    def get_neg_examples(self):
-        return self._get_examples(self.examples['dmenr'])
+    def get_neg_example(self, index):
+        keys = list(self.examples['dmenr'].keys())
+        id = keys[index]
+        return self._get_examples(self.examples['dmenr'][id], id)
 
     # TODO
-    def _get_examples(self, examples):
-        return self._resize(examples[0]), self._resize(examples[1])
+    def _get_examples(self, examples, id):
+        return self._resize(examples[0]), self._resize(examples[1]), id
 
 
-class EyesMonthsDataGenerator(object):
+class EyesMonthsDataGenerator(Sequence):
     @ingredient.capture
     def __init__(self, num_examples, input_size, generator_batch_size):
         self.batch_size = generator_batch_size
@@ -196,9 +206,11 @@ class EyesMonthsDataGenerator(object):
         self.input_size = input_size
         self.data_source = EyesNumpySource() # TODO
 
-    def __next__(self):
-        return self.create_example(self.batch_size)
+    def __getitem__(self, i):
+        return self.create_example()
 
+    def __len__(self):
+        return 100
 
     # zur Hälfte positive und negative Beispiele
     # num_examples = wieviele Bilder pro Zeitpunkt, werden zufällig ausgewählt
@@ -206,43 +218,50 @@ class EyesMonthsDataGenerator(object):
         M0 = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         M3 = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         Y = np.zeros((self.batch_size, 2))
+        EXTRA = [np.zeros((self.batch_size, 1))]
 
         for batch_idx in range(self.batch_size):
             if batch_idx < self.batch_size // 2:
                 Y[batch_idx, 0] = 1
-                p0, p3 = self.data_source.get_pos_examples()
+                p0, p3, id = self.data_source.get_pos_example(batch_idx)
 
                 indexes = list(range(self.num_examples))
                 random.shuffle(indexes)
                 indexes = indexes[:self.num_examples]
 
+                baselineData = baseline(id)
+                
                 for i in indexes:
                     M0[i][batch_idx, :, :, 0] = p0[i]
                     M3[i][batch_idx, :, :, 0] = p3[i]
+                    EXTRA[i][batch_idx] = baselineData
+                
             else:
                 Y[batch_idx, 1] = 1
-                n0, n3 = self.data_source.get_neg_examples()
+                n0, n3, id = self.data_source.get_neg_example(batch_idx)
                 
                 indexes = list(range(self.num_examples))
                 random.shuffle(indexes)
                 indexes = indexes[:self.num_examples]
 
+                baselineData = baseline(id)
                 for i in indexes:
                     M0[i][batch_idx, :, :, 0] = n0[i]
                     M3[i][batch_idx, :, :, 0] = n3[i]
-
-        return M0 + M3, Y
+                    EXTRA[i][batch_idx] = baselineData
+                
+        return M0 + M3 + EXTRA, Y
 
 # extras
 @ingredient.capture
-def baseline(excel_path):
-    df = pd.read_excel(excel_path, usecols=[11], skiprows=1)
-    return df.values
+def baseline(id, excel_path):
+    df = pd.read_excel(excel_path)
+    return df.loc[df['ID'] == id]['Baseline BCVA'].values[0]
 
 @ingredient.capture
 def dme_run(fit_batch_size, epochs):
     model = EyesMonthsClassifier().create_model()
     trainX, trainY = EyesMonthsDataGenerator().create_example()
-    model.fit(trainX, trainY, fit_batch_size, epochs)
+    model.fit_generator(EyesMonthsDataGenerator(), steps_per_epoch=100, epochs=epochs )
     _, accuracy = model.evaluate(trainX, trainY)
     print('Accuracy: %.2f' % (accuracy*100))

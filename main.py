@@ -43,8 +43,8 @@ def update_cfg():
     dropout_rate = 0.5
     filters = 32
     fit_batch_size = 32
-    epochs = 100
-    excel_path = 'data/dme-baseline-data.xlsx'
+    epochs = 50
+    excel_path = 'data/dme-data.xlsx'
 
 @ex.automain
 def run():

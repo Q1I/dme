@@ -94,38 +94,33 @@ def to_mat(patients):
 def parse_files(target, files):
     files.sort()
 
-    mats_train = []
-    mats_test = []
+    mats_train = {}
+    mats_test = {}
 
     mat = np.zeros((2, 3, 472, 498))
-    index = 0
+    counter = 0
 
     print('FILES: %d' % len(files))
     for file in files:      
         if 'DS' in file:
             continue
         
+        id, eye, month, index = file.split('.',1)[0].split('_')
+
         image = parse_file(target, None, file)
 
-        if index % 6 < 3:
-            month = 0
-        else:
-            month = 1
-        image_index = index % 3
+        mat[int(month) if month == '0' else 1, int(index), :, :] = image
 
-        mat[month, image_index, :, :] = image
+        counter += 1
 
-        index += 1
-
-        if index % 6 == 0:
+        if counter % 6 == 0:
             if np.random.random() < 0.8:
-                mats_train += [mat]
+                mats_train[id] = mat
             else:
-                mats_test += [mat]
-
+                mats_test[id] = mat
             mat = np.zeros((2, 3, 472, 498))
 
-    print('index: %d' % index)
+    print('counter: %d' % counter)
     print('train: %d' % len(mats_train))
     print('test: %d' % len(mats_test))
 
@@ -139,8 +134,8 @@ def parse_target(target, file_path):
     
 
 def save(target, data, folder):
-    for i, d in enumerate(data):
-        path = 'data/parsed/%s/%s/%i.npy' % (target, folder, i)
+    for i, d in data.items():
+        path = 'data/parsed/%s/%s/%s.npy' % (target, folder, i)
         ensure_dir(path)
         np.save(path, d)
 
@@ -159,7 +154,7 @@ def save(target, data, folder):
             image[w_fr:w_to, h_fr:h_to, 0] = d[mon, exa]
 
         image = array_to_img(image)
-        path = 'data/images/%s/%s/%i.png' % (target, folder, i)
+        path = 'data/images/%s/%s/%s.png' % (target, folder, i)
         ensure_dir(path)
         image.save(path)
 
