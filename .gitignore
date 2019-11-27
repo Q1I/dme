@@ -2,5 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
 **/data/*
 !**/data/parsed
+!**/data/dme-extras.xlsx
