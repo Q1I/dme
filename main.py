@@ -2,13 +2,13 @@ from sacred import Experiment
 import json
 from sacred.observers import FileStorageObserver
 
-from ingredients.parse_months import ingredient as parse_months_ingredient, parse_months_run
+# from ingredients.parse_months import ingredient as parse_months_ingredient, parse_months_run
 from ingredients.dme import ingredient as dme_ingredient, dme_run
 
 #################
 ## ingredients ##
 #################
-ingredients = [parse_months_ingredient, dme_ingredient]
+ingredients = [dme_ingredient]
 
 ex = Experiment('dme',  ingredients)
 
@@ -30,11 +30,11 @@ def default():
     """Default Configuration"""
     title = 'dme - visus'
 
-@parse_months_ingredient.config
-def update_cfg():
-    start_at_x = 510
-    cut_y = 124
-    file_path = '/home/q1/Python/dl/data/uniklinik_augen'
+# @parse_months_ingredient.config
+# def update_cfg():
+#     start_at_x = 510
+#     cut_y = 124
+#     file_path = '/home/q1/Python/dl/data/uniklinik_augen'
 
 @dme_ingredient.config
 def update_cfg():
