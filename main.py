@@ -12,17 +12,17 @@ ingredients = [dme_ingredient]
 
 ex = Experiment('dme',  ingredients)
 
+# path = ''
+path = '/scratch/ws/trng859b-dme/'
+
 ##############
 ## observer ##
 ##############
-ex.observers.append(FileStorageObserver('logs'))
+ex.observers.append(FileStorageObserver(path + 'logs'))
 
 ############
 ## config ##
 ############
-# data_path = 'data/'
-data_path = '/scratch/ws/trng859b-dme/data/'
-
 ex.add_config('core/config.json')
 
 @ex.config
@@ -39,17 +39,17 @@ def default():
 @dme_ingredient.config
 def update_cfg():
     """Configuration >> DME"""
-    num_examples = 2
+    num_examples = 1
     input_size = 30
     generator_batch_size = 109
-    numpy_source_path = data_path + 'parsed'
+    numpy_source_path = path + 'data/parsed'
     dropout_rate = 0.5
     filters = 32
     fit_batch_size = 32
-    epochs = 8
+    epochs = 20
     steps_per_epoch = 100
-    excel_path = data_path + 'dme-extras.xlsx'
-    model_save_path = data_path + 'models/'
+    excel_path = path + 'data/dme-extras.xlsx'
+    model_save_path = path + 'data/models/'
     verbose = 1
 
 @ex.automain

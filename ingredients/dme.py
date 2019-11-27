@@ -4,7 +4,7 @@ import os
 import random
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
-import keras.backend as K
+import tensorflow.keras.backend as K
 
 from tensorflow.keras.layers import *
 from tensorflow.keras.models import Sequential, Model
