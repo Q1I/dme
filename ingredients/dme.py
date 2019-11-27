@@ -77,9 +77,9 @@ class EyesMonthsClassifier(object) :
         extra = Input((num_extra,))
 
         encoder = self._create_encoder()
-        classifier = self._create_classifier(input_size=512 + num_extra)
 
         if self.num_examples > 1:
+            classifier_input_size = 1024
             enc0 = [encoder(inp) for inp in month0]
             enc0_min = minimum(enc0)
             enc0_max = maximum(enc0)
@@ -89,6 +89,7 @@ class EyesMonthsClassifier(object) :
             enc3_max = maximum(enc3)
             enc3 = concatenate([enc3_min, enc3_max])
         else:
+            classifier_input_size = 512
             enc0 = encoder(month0[0])
             enc3 = encoder(month3[0])
 
@@ -97,6 +98,8 @@ class EyesMonthsClassifier(object) :
         # Extra-Informationen werden dann hier konkateniert:
         enc = concatenate([enc, extra])
 
+
+        classifier = self._create_classifier(input_size=classifier_input_size + num_extra)
         out = classifier(enc)
 
         model = Model(month0 + month3 + [extra], out, name='eye_sum_model')
@@ -244,7 +247,7 @@ class EyesMonthsDataGenerator(Sequence):
         M0 = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         M3 = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         Y = np.zeros((self.batch_size, 2))
-        EXTRA = [np.zeros((self.batch_size, 1))]
+        EXTRA = [np.zeros((self.batch_size, 1)) for _ in range(self.num_examples)]
 
         counter = 0
         for idx in data_indexes:
@@ -302,7 +305,7 @@ def dme_run(id, fit_batch_size, steps_per_epoch, epochs, model_save_path):
         # test data
         testX, testY = generator.create_sample(test_indexes)
         # Fit the model
-        model.fit_generator(generator, validation_data=(testX, testY), epochs=epochs)
+        model.fit_generator(generator, validation_data=(testX, testY), epochs=epochs, verbose=2)
         # trainX, trainY = generator.create_sample(train_indexes)
         # model.fit(trainX, trainY, batch_size=32, epochs=100)
         print('train done')

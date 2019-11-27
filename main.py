@@ -36,7 +36,7 @@ def update_cfg():
 @dme_ingredient.config
 def update_cfg():
     """Configuration >> DME"""
-    num_examples = 1
+    num_examples = 2
     input_size = 30
     generator_batch_size = 109
     numpy_source_path = 'data/parsed'
