@@ -99,32 +99,42 @@ def parse_files(target, files):
 
     mat = np.zeros((2, 3, 472, 498))
     counter = 0
-
+    prev_id = ''
     print('FILES: %d' % len(files))
     for file in files:      
         if 'DS' in file:
             continue
         
         id, eye, month, index = file.split('.',1)[0].split('_')
-
-        image = parse_file(target, None, file)
-
-        mat[int(month) if month == '0' else 1, int(index), :, :] = image
-
         counter += 1
 
-        if counter % 6 == 0:
-            if np.random.random() < 0.8:
-                mats_train[id] = mat
-            else:
-                mats_test[id] = mat
-            mat = np.zeros((2, 3, 472, 498))
+        # print('p: %s - c: %s' %(prev_id,id))
+        
+        if prev_id != '' and prev_id != id: # add image
+            add_image(prev_id, mat, mats_train, mats_test)
+        
+        # set previous data
+        prev_id = id
+        image = parse_file(target, None, file)
+        mat[int(month) if month == '0' else 1, int(index), :, :] = image
+
+        # add last image
+        if len(files) == counter:
+            add_image(prev_id, mat, mats_train, mats_test)
 
     print('counter: %d' % counter)
     print('train: %d' % len(mats_train))
     print('test: %d' % len(mats_test))
 
     return mats_train, mats_test
+
+def add_image(id, mat, mats_train, mats_test):
+    if np.random.random() < 0.8:
+        mats_train[id] = mat
+    else:
+        mats_test[id] = mat
+        mat = np.zeros((2, 3, 472, 498))
+    print('add ' + id)
 
 @ingredient.capture
 def parse_target(target, file_path):

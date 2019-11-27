@@ -22,10 +22,10 @@ ex.observers.append(FileStorageObserver('logs'))
 ############
 ex.add_config('core/config.json')
 
-# @ex.config
-# def default():
-#     """Default Configuration"""
-#     title = 'dme'
+@ex.config
+def default():
+    """Default Configuration"""
+    title = 'dme - visus'
 
 @parse_months_ingredient.config
 def update_cfg():
@@ -38,16 +38,19 @@ def update_cfg():
     """Configuration >> DME"""
     num_examples = 1
     input_size = 30
-    generator_batch_size = 32
+    generator_batch_size = 109
     numpy_source_path = 'data/parsed'
     dropout_rate = 0.5
     filters = 32
     fit_batch_size = 32
-    epochs = 50
-    excel_path = 'data/dme-data.xlsx'
+    epochs = 8
+    steps_per_epoch = 100
+    excel_path = 'data/dme-extras.xlsx'
+    model_save_path = 'data/models/'
 
 @ex.automain
-def run():
+def run(_run, title):
     # parse_months_run()
-	dme_run()
+    print('Start experiment: %s' % title)
+    dme_run(_run._id)
 
