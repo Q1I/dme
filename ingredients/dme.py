@@ -27,6 +27,7 @@ def cfg():
     steps_per_epoch = 100
     excel_path = 'path_to_excel_data_file'
     model_save_path = 'path_to_saved_models'
+    verbose = 2
 
 
 # skip layer, siehe https://arxiv.org/pdf/1512.03385.pdf, Abbildung 2
@@ -285,7 +286,7 @@ def ca(y_true, y_pred):
     return 1 - K.mean(K.abs(y_true - y_pred))
 
 @ingredient.capture
-def dme_run(id, fit_batch_size, steps_per_epoch, epochs, model_save_path):
+def dme_run(id, fit_batch_size, steps_per_epoch, epochs, model_save_path, verbose):
     # fix random seed for reproducibility
     seed = 7
     np.random.seed(seed)
@@ -305,7 +306,7 @@ def dme_run(id, fit_batch_size, steps_per_epoch, epochs, model_save_path):
         # test data
         testX, testY = generator.create_sample(test_indexes)
         # Fit the model
-        model.fit_generator(generator, validation_data=(testX, testY), epochs=epochs, verbose=2)
+        model.fit_generator(generator, validation_data=(testX, testY), epochs=epochs, verbose=verbose)
         # trainX, trainY = generator.create_sample(train_indexes)
         # model.fit(trainX, trainY, batch_size=32, epochs=100)
         print('train done')
@@ -315,7 +316,7 @@ def dme_run(id, fit_batch_size, steps_per_epoch, epochs, model_save_path):
         print("%s: %.2f%%" % (model.metrics_names[1], scores[1]*100))
         cvscores.append(scores[1] * 100)
         print("average acc: %.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
-        model.save('%sdme-%s-%i.h5' % (model_save_path, id, counter))  # creates a HDF5 file 'my_model.h5'
+        model.save('%sdme-%s-%i.h5' % (model_save_path, id, counter))
         print("Saved model to disk")
         counter += 1
     print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))

@@ -20,6 +20,9 @@ ex.observers.append(FileStorageObserver('logs'))
 ############
 ## config ##
 ############
+# data_path = 'data/'
+data_path = '/scratch/ws/trng859b-dme/data/'
+
 ex.add_config('core/config.json')
 
 @ex.config
@@ -39,14 +42,15 @@ def update_cfg():
     num_examples = 2
     input_size = 30
     generator_batch_size = 109
-    numpy_source_path = 'data/parsed'
+    numpy_source_path = data_path + 'parsed'
     dropout_rate = 0.5
     filters = 32
     fit_batch_size = 32
     epochs = 8
     steps_per_epoch = 100
-    excel_path = 'data/dme-extras.xlsx'
-    model_save_path = 'data/models/'
+    excel_path = data_path + 'dme-extras.xlsx'
+    model_save_path = data_path + 'models/'
+    verbose = 1
 
 @ex.automain
 def run(_run, title):
