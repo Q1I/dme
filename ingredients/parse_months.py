@@ -112,11 +112,12 @@ def parse_files(target, files):
         
         if prev_id != '' and prev_id != id: # add image
             add_image(prev_id, mat, mats_train, mats_test)
+            mat = np.zeros((2, 3, 472, 498))
         
         # set previous data
         prev_id = id
         image = parse_file(target, None, file)
-        mat[int(month) if month == '0' else 1, int(index), :, :] = image
+        mat[0 if month == '0' else 1, int(index) % 3, :, :] = image
 
         # add last image
         if len(files) == counter:
@@ -133,7 +134,6 @@ def add_image(id, mat, mats_train, mats_test):
         mats_train[id] = mat
     else:
         mats_test[id] = mat
-        mat = np.zeros((2, 3, 472, 498))
     print('add ' + id)
 
 @ingredient.capture
@@ -152,10 +152,13 @@ def save(target, data, folder):
         width = 472
         height = 498
 
-        months = np.random.randint(0, 2, (4,))
-        examples = np.random.randint(0, 3, (4,))
+        # months = np.random.randint(0, 2, (4,))
+        # examples = np.random.randint(0, 3, (4,))
 
-        image = np.zeros((width, height*4, 1))
+        months = [0, 0, 0, 1, 1 ,1]
+        examples = [0, 1, 2, 0, 1 ,2]
+
+        image = np.zeros((width, height*6, 1))
         for j, (mon, exa) in enumerate(zip(months, examples)):
             h_fr = height * j
             h_to = height * (1+j)

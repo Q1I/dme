@@ -99,7 +99,6 @@ class EyesMonthsClassifier(object) :
         # Extra-Informationen werden dann hier konkateniert:
         enc = concatenate([enc, extra])
 
-
         classifier = self._create_classifier(input_size=classifier_input_size + num_extra)
         out = classifier(enc)
 
@@ -173,7 +172,15 @@ class EyesNumpySource(object):
             self._load(target, file_name) # TODO
 
     def _resize(self, mat):
-        return [cv2.resize(mat[i], dsize=(self.input_size, self.input_size)) for i in range(mat.shape[0])]
+        arr = [self.resize_image(mat[i]) for i in range(mat.shape[0])]
+        return arr
+
+    def resize_image(self, img):
+        # reshape from (c, w, h) to (w, h, c) for cv2.resize
+        reshaped = np.moveaxis(img, 0, -1)
+        resized = cv2.resize(reshaped, dsize=(self.input_size, self.input_size))
+        # reshape back to (c, w, h)
+        return np.moveaxis(resized, -1, 0)
 
     def _load(self, target, id):
         mat = np.load(self.files[target][id])
@@ -181,14 +188,13 @@ class EyesNumpySource(object):
             mat = mat / 255
 
         images = self._resize(mat)
-        # self.examples[target][id] = images
-        self.examples[target][id] = mat
+        self.examples[target][id] = images
 
     def get_example(self, target, id):
         return self.examples[target][id]
 
     def get_sample(self, sample):
-        return self._resize(sample[0]), self._resize(sample[1])
+        return sample[0], sample[1]
 
 class EyesMonthsDataGenerator(Sequence):
     @ingredient.capture
