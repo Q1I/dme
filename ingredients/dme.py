@@ -3,7 +3,7 @@ import numpy as np
 import os
 import random
 import pandas as pd
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedKFold
 import tensorflow.keras.backend as K
 
@@ -311,6 +311,27 @@ class EyesMonthsDataGenerator(Sequence):
 def ca(y_true, y_pred):
     return 1 - K.mean(K.abs(y_true - y_pred))
 
+def plot():
+    # summarize history for accuracy
+    plt.plot(history.history['ca'])
+    plt.plot(history.history['val_ca'])
+    plt.title('model accuracy')
+    plt.ylabel('accuracy')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'test'], loc='upper left')
+    plt.savefig('%s%s/accuracy-%i.png' % (history_save_path, id, counter))
+    plt.clf()
+
+    # summarize history for loss
+    plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
+    plt.title('model loss')
+    plt.ylabel('loss')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'test'], loc='upper left')
+    plt.savefig('%s%s/loss-%i.png' % (history_save_path, id, counter))
+    plt.clf()
+        
 @ingredient.capture
 def dme_run(id, steps_per_epoch, epochs, model_save_path, history_save_path, verbose, patience):
     # fix random seed for reproducibility
@@ -356,25 +377,7 @@ def dme_run(id, steps_per_epoch, epochs, model_save_path, history_save_path, ver
         cvscores.append(scores[1] * 100)
         print("average acc: %.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
         
-        # summarize history for accuracy
-        plt.plot(history.history['ca'])
-        plt.plot(history.history['val_ca'])
-        plt.title('model accuracy')
-        plt.ylabel('accuracy')
-        plt.xlabel('epoch')
-        plt.legend(['train', 'test'], loc='upper left')
-        plt.savefig('%s%s/accuracy-%i.png' % (history_save_path, id, counter))
-        plt.clf()
-
-        # summarize history for loss
-        plt.plot(history.history['loss'])
-        plt.plot(history.history['val_loss'])
-        plt.title('model loss')
-        plt.ylabel('loss')
-        plt.xlabel('epoch')
-        plt.legend(['train', 'test'], loc='upper left')
-        plt.savefig('%s%s/loss-%i.png' % (history_save_path, id, counter))
-        plt.clf()
+        # plot()
         
         # save model
         # model.save('%sdme-%s-%i.h5' % (model_save_path, id, counter))
