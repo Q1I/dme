@@ -40,17 +40,18 @@ def update_cfg():
 def update_cfg():
     """Configuration >> DME"""
     num_examples = 3
-    input_size = 30
-    generator_batch_size = 100
+    input_size = 128 # 128
+    batch_size = 16 # 16
     numpy_source_path = path + 'data/parsed'
-    dropout_rate = 0.5
+    dropout_rate = 0.2
     filters = 32
-    fit_batch_size = 32
     epochs = 100
     steps_per_epoch = 100
     excel_path = path + 'data/dme-extras.xlsx'
     model_save_path = path + 'data/models/'
+    history_save_path = path + 'logs/'
     verbose = 1
+    patience = 10
 
 @ex.automain
 def run(_run, title):

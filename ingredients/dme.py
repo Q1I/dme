@@ -3,12 +3,14 @@ import numpy as np
 import os
 import random
 import pandas as pd
+import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedKFold
 import tensorflow.keras.backend as K
 
 from tensorflow.keras.layers import *
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.utils import *
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 
 from sacred import Ingredient
 
@@ -18,16 +20,17 @@ ingredient = Ingredient('dme')
 def cfg():
     num_examples = 1
     input_size = 30
-    generator_batch_size = 109 # number of total eyes
+    batch_size = 16
     numpy_source_path = 'path_to_numpy_matrices'
     dropout_rate = 0.2
     filters = 32
-    fit_batch_size = 32
     epochs = 50
     steps_per_epoch = 100
     excel_path = 'path_to_excel_data_file'
     model_save_path = 'path_to_saved_models'
+    history_save_path = 'path_to_history_images'
     verbose = 2
+    patience = 10
 
 
 # skip layer, siehe https://arxiv.org/pdf/1512.03385.pdf, Abbildung 2
@@ -69,6 +72,7 @@ class EyesMonthsClassifier(object) :
         self.num_examples = num_examples
         self.input_size = input_size
 
+    # monat0-pos, monat3-pos, monat0.neg, monat3-neg
     def create_model(self):
         month0 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         month3 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
@@ -103,7 +107,7 @@ class EyesMonthsClassifier(object) :
         out = classifier(enc)
 
         model = Model(month0 + month3 + [extra], out, name='eye_sum_model')
-        model.compile(loss='mse', optimizer='nadam', metrics=[ca])
+        model.compile(loss='mse', optimizer='nadam', metrics=[ca]) # ca
 
         return model
 
@@ -149,27 +153,27 @@ class EyesNumpySource(object):
     def __init__(self, numpy_source_path, input_size):
         self.path = numpy_source_path
         self.files = {}
-        self.examples = {}
         self.input_size = input_size
+        self.ids = {} # id for targets
 
         for target in ['dmenr', 'dmer']:
             self._load_files(target)
-            print('Loaded %i files for %s and got %i examples!' % (len(self.files[target]), target, len(self.examples[target])))
+            print('Loaded %i files for %s and got %i ids!' % (len(self.files[target]), target, len(self.ids[target])))
 
     def _load_files(self, target):
         self.files[target] = {}
-        self.examples[target] = {}
+        self.ids[target] = {}
 
         path = '%s/%s/%s' % (self.path, target, 'train')
         for file_index, file in enumerate(os.listdir(path)):
             file_name = file.split('.')[0]
-            self.files[target][file.split('.')[0]] = path + '/' + file
-            self._load(target, file_name) # TODO
+            self.files[target][file_name] = path + '/' + file
+            # self._load(target, file_name) # TODO
         path = '%s/%s/%s' % (self.path, target, 'test')
         for file_index, file in enumerate(os.listdir(path)):
             file_name = file.split('.')[0]
             self.files[target][file_name] = path + '/' + file
-            self._load(target, file_name) # TODO
+            # self._load(target, file_name) # TODO
 
     def _resize(self, mat):
         arr = [self.resize_image(mat[i]) for i in range(mat.shape[0])]
@@ -188,98 +192,114 @@ class EyesNumpySource(object):
             mat = mat / 255
 
         images = self._resize(mat)
-        self.examples[target][id] = images
+        # self.examples[target][id] = images
+        return images
 
     def get_example(self, target, id):
-        return self.examples[target][id]
+        return self.parse_example(self._load(target, id))
+        # return parse_example(self.examples[target][id])
 
-    def get_sample(self, sample):
-        return sample[0], sample[1]
+    def parse_example(self, example):
+        return example[0], example[1]
 
 class EyesMonthsDataGenerator(Sequence):
     @ingredient.capture
-    def __init__(self, num_examples, input_size, generator_batch_size, excel_path):
-        self.batch_size = generator_batch_size
+    def __init__(self, num_examples, input_size, batch_size, excel_path):
+        self.batch_size = batch_size
         self.num_examples = num_examples
         self.input_size = input_size
         self.data_source = EyesNumpySource() # TODO
         self.extras = pd.read_excel(excel_path)
-        # helper for k-fold train and test datasets
-        self.X = []
-        self.Y = []
-        self.indexes = [] # map index to id
+        self.shuffle = True
+        
+        self.ids = [] # list of all ids
+        self.labels = [] # list of labels
 
     # Gets batch at position index.
     def __getitem__(self, index):
-        # return self.create_example()
-        return self.create_sample()
+        'Generate one batch of data'
+        # Generate indexes of the batch
+        indexes = self.train_indexes[index*self.batch_size:(index+1)*self.batch_size]
+
+        # Find list of IDs
+        # ids = [self.ids[k] for k in indexes]
+
+        # Generate data
+        X, y = self.data_generation(indexes)
+
+        return X, y
 
     # Number of batch in the Sequence
     def __len__(self):
-        return 100
+        'Denotes the number of batches per epoch'
+        return int(np.floor(len(self.ids) / self.batch_size))
+        # return 100
+        
+    # def on_epoch_end(self):
+    #   'Updates indexes after each epoch'
+    #   self.ids = np.arange(len(self.ids))
+    #   if self.shuffle == True:
+    #     np.random.shuffle(self.ids)
 
-    def set_train_indexes(self, indexes):
-        self.train_indexes = indexes
-
-    def load_data(self):
-        X = []
-        Y = []
-        indexes = []
-        keys_dmer = list(self.data_source.examples['dmer'].keys())
-        keys_dmenr = list(self.data_source.examples['dmenr'].keys())
-        random.shuffle(keys_dmer)
-        random.shuffle(keys_dmenr)
-
-        for batch_idx in range(self.batch_size):
-            if batch_idx < self.batch_size // 2 and batch_idx < len(keys_dmer):
-                id = keys_dmer[batch_idx]
-                target = 'dmer'
-                Y.append(0)
-            else:
-                id = keys_dmenr[batch_idx % len(keys_dmenr)]
-                target = 'dmenr'
-                Y.append(1)
-
-            X.append(self.data_source.get_example(target, id))
-            indexes.append(id)
-
-        self.X = X
-        self.Y = Y   
-        self.indexes = indexes     
-        return X, Y
-
-    def create_sample(self, data_indexes = None):
-        if data_indexes is None:
-            data_indexes = self.train_indexes
+    def data_generation(self, indexes):
+        'Generates data containing batch_size samples'
+        # Initialization        
         M0 = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         M3 = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         Y = np.zeros((self.batch_size, 2))
-        EXTRA = [np.zeros((self.batch_size, 1)) for _ in range(self.num_examples)]
+        EXTRA = [np.zeros((self.batch_size, 1))]
 
-        counter = 0
-        for idx in data_indexes:
-            if self.Y[idx] == 0:
+        # Generate data
+        for counter, idx in enumerate(indexes):
+            id = self.ids[idx]
+
+            # label
+            if self.labels[idx] == 0:
                 Y[counter, 0] = 1
+                target = 'dmer'
             else:
                 Y[counter, 1] = 1
+                target = 'dmenr'
             
-            p0, p3 = self.data_source.get_sample(self.X[idx])
+            # sample
+            p0, p3 = self.data_source.get_example(target, id)
 
             indexes = list(range(self.num_examples))
             random.shuffle(indexes)
             indexes = indexes[:self.num_examples]
 
-            id = self.indexes[idx]
+            # extras
             baselineData = self._baseline(id)
             
             for i in indexes:
                 M0[i][counter, :, :, 0] = p0[i]
                 M3[i][counter, :, :, 0] = p3[i]
-                EXTRA[i][counter] = baselineData
             
-            counter += 1
+            EXTRA[0][counter] = baselineData
 
         return M0 + M3 + EXTRA, Y
+
+    def set_train_indexes(self, indexes):
+        self.train_indexes = indexes
+
+    # return list of all ids and labels for k-fold split
+    def get_all_data(self):
+        keys_dmer = self.data_source.files['dmer']
+        keys_dmenr = self.data_source.files['dmenr']
+        # random.shuffle(keys_dmer)
+        # random.shuffle(keys_dmenr)
+
+        total_images = len(keys_dmer) + len(keys_dmenr)
+        print('Number of total eyes: %i' % total_images)
+
+        for id in keys_dmer:
+            self.ids.append(id)
+            self.labels.append(0)
+        for id in keys_dmenr:
+            self.ids.append(id)
+            self.labels.append(1)
+
+        return self.ids, self.labels
 
     # extras
     @ingredient.capture
@@ -292,37 +312,73 @@ def ca(y_true, y_pred):
     return 1 - K.mean(K.abs(y_true - y_pred))
 
 @ingredient.capture
-def dme_run(id, fit_batch_size, steps_per_epoch, epochs, model_save_path, verbose):
+def dme_run(id, steps_per_epoch, epochs, model_save_path, history_save_path, verbose, patience):
     # fix random seed for reproducibility
     seed = 7
     np.random.seed(seed)
+
     # define 10-fold cross validation test harness
     kfold = StratifiedKFold(n_splits=10, shuffle=True, random_state=seed)
     cvscores = []
     generator = EyesMonthsDataGenerator()
-    X, Y = generator.load_data()
+    X, Y = generator.get_all_data()
     counter = 0
+    
+    # callbacks
+    filepath = "%s%s/weights-improvement-{epoch:02d}-{val_ca:.2f}.hdf5" % (history_save_path, id)
+    checkpoint = ModelCheckpoint(filepath, monitor='val_ca', verbose=0, save_best_only=True, mode='max')
+    es = EarlyStopping(monitor='val_loss', mode='min', verbose=2, patience=patience)
+    callbacks_list = [checkpoint, es]
+
     for train_indexes, test_indexes in kfold.split(X, Y): # return lists of indexes
+        print('### K-Fold split: ', counter)
         print('train indexes: ', train_indexes)
         print('test indexes: ', test_indexes)
+        
         # set train data indexes for generator
         generator.set_train_indexes(train_indexes)
+
         # create model
         model = EyesMonthsClassifier().create_model()
+        # plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
+
         # test data
-        testX, testY = generator.create_sample(test_indexes)
+        testX, testY = generator.data_generation(test_indexes)
         # Fit the model
-        model.fit_generator(generator, validation_data=(testX, testY), epochs=epochs, verbose=verbose)
+        history = model.fit_generator(generator, validation_data=(testX, testY), epochs=epochs, verbose=verbose, callbacks=callbacks_list)
         # trainX, trainY = generator.create_sample(train_indexes)
         # model.fit(trainX, trainY, batch_size=32, epochs=100)
-        print('train done')
+
         # evaluate the model
         scores = model.evaluate(testX, testY, verbose=0)
         print('test loss, test acc:', scores)
         print("%s: %.2f%%" % (model.metrics_names[1], scores[1]*100))
         cvscores.append(scores[1] * 100)
         print("average acc: %.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
-        model.save('%sdme-%s-%i.h5' % (model_save_path, id, counter))
-        print("Saved model to disk")
+        
+        # summarize history for accuracy
+        plt.plot(history.history['ca'])
+        plt.plot(history.history['val_ca'])
+        plt.title('model accuracy')
+        plt.ylabel('accuracy')
+        plt.xlabel('epoch')
+        plt.legend(['train', 'test'], loc='upper left')
+        plt.savefig('%s%s/accuracy-%i.png' % (history_save_path, id, counter))
+        plt.clf()
+
+        # summarize history for loss
+        plt.plot(history.history['loss'])
+        plt.plot(history.history['val_loss'])
+        plt.title('model loss')
+        plt.ylabel('loss')
+        plt.xlabel('epoch')
+        plt.legend(['train', 'test'], loc='upper left')
+        plt.savefig('%s%s/loss-%i.png' % (history_save_path, id, counter))
+        plt.clf()
+        
+        # save model
+        # model.save('%sdme-%s-%i.h5' % (model_save_path, id, counter))
+        # print("Saved model to disk")
+
         counter += 1
     print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
