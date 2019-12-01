@@ -3,7 +3,7 @@ import numpy as np
 import os
 import random
 import pandas as pd
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedKFold
 import tensorflow.keras.backend as K
 
@@ -19,13 +19,12 @@ ingredient = Ingredient('dme')
 @ingredient.config
 def cfg():
     num_examples = 1
-    input_size = 30
+    input_size = 128
     batch_size = 16
     numpy_source_path = 'path_to_numpy_matrices'
     dropout_rate = 0.2
     filters = 32
     epochs = 50
-    steps_per_epoch = 100
     excel_path = 'path_to_excel_data_file'
     model_save_path = 'path_to_saved_models'
     history_save_path = 'path_to_history_images'
@@ -249,8 +248,12 @@ class EyesMonthsDataGenerator(Sequence):
         Y = np.zeros((self.batch_size, 2))
         EXTRA = [np.zeros((self.batch_size, 1))]
 
+        dataset_size = len(Y)
         # Generate data
         for counter, idx in enumerate(indexes):
+            if counter >= dataset_size:
+                break
+
             id = self.ids[idx]
 
             # label
@@ -311,7 +314,7 @@ class EyesMonthsDataGenerator(Sequence):
 def ca(y_true, y_pred):
     return 1 - K.mean(K.abs(y_true - y_pred))
 
-def plot():
+def plot(history, history_save_path, id, counter):
     # summarize history for accuracy
     plt.plot(history.history['ca'])
     plt.plot(history.history['val_ca'])
@@ -331,9 +334,10 @@ def plot():
     plt.legend(['train', 'test'], loc='upper left')
     plt.savefig('%s%s/loss-%i.png' % (history_save_path, id, counter))
     plt.clf()
-        
+
 @ingredient.capture
-def dme_run(id, steps_per_epoch, epochs, model_save_path, history_save_path, verbose, patience):
+def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience):
+    id = _run._id
     # fix random seed for reproducibility
     seed = 7
     np.random.seed(seed)
@@ -377,7 +381,10 @@ def dme_run(id, steps_per_epoch, epochs, model_save_path, history_save_path, ver
         cvscores.append(scores[1] * 100)
         print("average acc: %.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
         
-        # plot()
+        _run.log_scalar("test.loss", scores[0], counter)
+        _run.log_scalar("test.accuracy", scores[1], counter)
+
+        plot(history, history_save_path, id, counter)
         
         # save model
         # model.save('%sdme-%s-%i.h5' % (model_save_path, id, counter))
@@ -385,3 +392,5 @@ def dme_run(id, steps_per_epoch, epochs, model_save_path, history_save_path, ver
 
         counter += 1
     print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
+    _run.log_scalar("average.test.accuracy", "%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
+    _run.log_scalar("#experiement", title)
