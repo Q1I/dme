@@ -29,7 +29,7 @@ ex.add_config('core/config.json')
 @ex.config
 def default():
     """Default Configuration"""
-    title = 'dme - visus'
+    title = 'dme'
 
 # @parse_months_ingredient.config
 # def update_cfg():
@@ -52,10 +52,14 @@ def update_cfg():
     history_save_path = path + 'logs/'
     verbose = 2
     patience = 40
+    use_baseline = True
+    evenly_distributed = False
 
 @ex.automain
-def run(_run, title):
+def run(_run, title, dme):
     # parse_months_run()
+    title += ' - visus' if dme['use_baseline'] else ' - no extras'
+    title += ' - evenly distributed examples' if dme['evenly_distributed'] else ''
     print('Start experiment: %s' % title)
     dme_run(_run, title)
     print('End experiment: %s' % title)

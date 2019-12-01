@@ -30,6 +30,8 @@ def cfg():
     history_save_path = 'path_to_history_images'
     verbose = 2
     patience = 10
+    use_baseline = True
+    evenly_distributed = False
 
 
 # skip layer, siehe https://arxiv.org/pdf/1512.03385.pdf, Abbildung 2
@@ -167,12 +169,10 @@ class EyesNumpySource(object):
         for file_index, file in enumerate(os.listdir(path)):
             file_name = file.split('.')[0]
             self.files[target][file_name] = path + '/' + file
-            # self._load(target, file_name) # TODO
         path = '%s/%s/%s' % (self.path, target, 'test')
         for file_index, file in enumerate(os.listdir(path)):
             file_name = file.split('.')[0]
             self.files[target][file_name] = path + '/' + file
-            # self._load(target, file_name) # TODO
 
     def _resize(self, mat):
         arr = [self.resize_image(mat[i]) for i in range(mat.shape[0])]
@@ -195,8 +195,22 @@ class EyesNumpySource(object):
         return images
 
     def get_example(self, target, id):
-        return self.parse_example(self._load(target, id))
+        # example by id
+        # return self.parse_example(self._load(target, id))
+        
+        # random example
+        if target == 'dmer':
+            example = self.get_pos_example()
+        else:
+            example = self.get_neg_example()
+        return self.parse_example(example)
         # return parse_example(self.examples[target][id])
+
+    def get_pos_example(self):
+        return self._load('dmer', random.choice(list(self.files['dmer'].keys())))
+
+    def get_neg_example(self):
+        return self._load('dmenr', random.choice(list(self.files['dmenr'].keys())))
 
     def parse_example(self, example):
         return example[0], example[1]
@@ -240,7 +254,8 @@ class EyesMonthsDataGenerator(Sequence):
     #   if self.shuffle == True:
     #     np.random.shuffle(self.ids)
 
-    def data_generation(self, indexes):
+    @ingredient.capture
+    def data_generation(self, index_list, evenly_distributed):
         'Generates data containing batch_size samples'
         # Initialization        
         M0 = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
@@ -250,14 +265,20 @@ class EyesMonthsDataGenerator(Sequence):
 
         dataset_size = len(Y)
         # Generate data
-        for counter, idx in enumerate(indexes):
+        for counter, idx in enumerate(index_list):
             if counter >= dataset_size:
                 break
 
             id = self.ids[idx]
 
+            # evenly distributed pos and neg examples
+            if evenly_distributed:
+                condition = counter < self.batch_size // 2
+            else: # no distribution, use index_list
+                condition = self.labels[idx] == 0
+
             # label
-            if self.labels[idx] == 0:
+            if condition:
                 Y[counter, 0] = 1
                 target = 'dmer'
             else:
@@ -287,8 +308,8 @@ class EyesMonthsDataGenerator(Sequence):
 
     # return list of all ids and labels for k-fold split
     def get_all_data(self):
-        keys_dmer = self.data_source.files['dmer']
-        keys_dmenr = self.data_source.files['dmenr']
+        keys_dmer = self.data_source.files['dmer'].keys()
+        keys_dmenr = self.data_source.files['dmenr'].keys()
         # random.shuffle(keys_dmer)
         # random.shuffle(keys_dmenr)
 
@@ -306,9 +327,11 @@ class EyesMonthsDataGenerator(Sequence):
 
     # extras
     @ingredient.capture
-    def _baseline(self, id):
-        return self.extras.loc[self.extras['ID'] == id]['Baseline BCVA (LogMAR)'].values[0]
-        # return 0
+    def _baseline(self, id, use_baseline):
+        if use_baseline:
+            return self.extras.loc[self.extras['ID'] == id]['Baseline BCVA (LogMAR)'].values[0]
+        else:
+            return 0
 
 
 def ca(y_true, y_pred):
