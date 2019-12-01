@@ -13,8 +13,8 @@ ingredients = [dme_ingredient]
 
 ex = Experiment('dme',  ingredients)
 
-# path = ''
-path = '/scratch/ws/trng859b-dme/'
+path = ''
+# path = '/scratch/ws/trng859b-dme/'
 
 ##############
 ## observer ##
@@ -58,4 +58,5 @@ def run(_run, title):
     # parse_months_run()
     print('Start experiment: %s' % title)
     dme_run(_run, title)
+    print('End experiment: %s' % title)
 
