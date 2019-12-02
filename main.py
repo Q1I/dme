@@ -44,7 +44,7 @@ def update_cfg():
     input_size = 128 # 128
     batch_size = 16 # 16
     numpy_source_path = path + 'data/parsed'
-    dropout_rate = 0.4
+    dropout_rate = 0.2
     filters = 32
     epochs = 100
     excel_path = path + 'data/dme-extras.xlsx'

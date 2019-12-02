@@ -73,8 +73,30 @@ class EyesMonthsClassifier(object) :
         self.num_examples = num_examples
         self.input_size = input_size
 
-    # monat0-pos, monat3-pos, monat0.neg, monat3-neg
-    def create_model(self):
+    def create_train_model(self):
+        month0_pos = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
+        month3_pos = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
+        month0_neg = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
+        month3_neg = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
+        
+         # hier würde man dann zusätzliche Informationen erstellen:
+        num_extra = 1
+        extra_pos = Input((num_extra,))
+        extra_neg = Input((num_extra,))
+
+        base_model = self.create_base_model()
+        out_pos = base_model(month0_pos + month3_pos + [extra_pos])
+        out_neg = base_model(month0_neg + month3_neg + [extra_neg])
+
+        # Extra-Informationen werden dann hier konkateniert:
+        # out_pos = concatenate([out_pos, extra])
+        # out_neg = concatenate([out_neg, extra])
+
+        train_model = Model(month0_pos + month3_pos + [extra_pos] + month0_neg + month3_neg + [extra_neg], [out_pos, out_neg], name='train_model')
+        train_model.compile(loss='mse', optimizer='nadam', metrics=[ca, ca]) # ca
+        return train_model
+
+    def create_base_model(self):
         month0 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         month3 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
 
@@ -107,8 +129,7 @@ class EyesMonthsClassifier(object) :
         classifier = self._create_classifier(input_size=classifier_input_size + num_extra)
         out = classifier(enc)
 
-        model = Model(month0 + month3 + [extra], out, name='eye_sum_model')
-        model.compile(loss='mse', optimizer='nadam', metrics=[ca]) # ca
+        model = Model(month0 + month3 + [extra], out, name='base_model')
 
         return model
 
@@ -194,16 +215,17 @@ class EyesNumpySource(object):
         # self.examples[target][id] = images
         return images
 
-    def get_example(self, target, id):
-        # example by id
-        # return self.parse_example(self._load(target, id))
-        
-        # random example
-        if target == 'dmer':
-            example = self.get_pos_example()
+    def get_example(self, target, id, evenly_distributed):
+        if evenly_distributed:
+            # random example
+            if target == 'dmer':
+                example = self.get_pos_example()
+            else:
+                example = self.get_neg_example()
+            return self.parse_example(target, example)
         else:
-            example = self.get_neg_example()
-        return self.parse_example(example)
+             # example by id
+            return self.parse_example(target, self._load(target, id))
         # return parse_example(self.examples[target][id])
 
     def get_pos_example(self):
@@ -212,8 +234,13 @@ class EyesNumpySource(object):
     def get_neg_example(self):
         return self._load('dmenr', random.choice(list(self.files['dmenr'].keys())))
 
-    def parse_example(self, example):
-        return example[0], example[1]
+    # return p0, p3, n0, n3 
+    @ingredient.capture
+    def parse_example(self, target, example):
+        if target == 'dmer':
+            return example[0], example[1], None, None
+        else:
+            return None, None, example[0], example[1] 
 
 class EyesMonthsDataGenerator(Sequence):
     @ingredient.capture
@@ -258,15 +285,17 @@ class EyesMonthsDataGenerator(Sequence):
     def data_generation(self, index_list, evenly_distributed):
         'Generates data containing batch_size samples'
         # Initialization        
-        M0 = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
-        M3 = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
-        Y = np.zeros((self.batch_size, 2))
+        M0_POS = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
+        M3_POS = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
+        M0_NEG = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
+        M3_NEG = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
+        Y_POS = np.zeros((self.batch_size, 2))
+        Y_NEG = np.zeros((self.batch_size, 2))
         EXTRA = [np.zeros((self.batch_size, 1))]
 
-        dataset_size = len(Y)
         # Generate data
         for counter, idx in enumerate(index_list):
-            if counter >= dataset_size:
+            if counter >= self.batch_size:
                 break
 
             id = self.ids[idx]
@@ -279,14 +308,16 @@ class EyesMonthsDataGenerator(Sequence):
 
             # label
             if condition:
-                Y[counter, 0] = 1
+                Y_POS[counter, 0] = 1
+                Y_NEG[counter, 1] = 1
                 target = 'dmer'
             else:
-                Y[counter, 1] = 1
+                Y_POS[counter, 1] = 1
+                Y_NEG[counter, 0] = 1
                 target = 'dmenr'
             
             # sample
-            p0, p3 = self.data_source.get_example(target, id)
+            p0, p3, n0, n3 = self.data_source.get_example(target, id, evenly_distributed)
 
             indexes = list(range(self.num_examples))
             random.shuffle(indexes)
@@ -296,12 +327,18 @@ class EyesMonthsDataGenerator(Sequence):
             baselineData = self._baseline(id)
             
             for i in indexes:
-                M0[i][counter, :, :, 0] = p0[i]
-                M3[i][counter, :, :, 0] = p3[i]
+                if p0 is not None:
+                    M0_POS[i][counter, :, :, 0] = p0[i]
+                if p3 is not None:
+                    M3_POS[i][counter, :, :, 0] = p3[i]
+                if n0 is not None:
+                    M0_NEG[i][counter, :, :, 0] = n0[i]
+                if n3 is not None:
+                    M3_NEG[i][counter, :, :, 0] = n3[i]
             
             EXTRA[0][counter] = baselineData
 
-        return M0 + M3 + EXTRA, Y
+        return M0_POS + M3_POS + EXTRA + M0_NEG + M3_NEG + EXTRA, [Y_POS ,Y_NEG]
 
     def set_train_indexes(self, indexes):
         self.train_indexes = indexes
@@ -339,25 +376,44 @@ def ca(y_true, y_pred):
 
 def plot(history, history_save_path, id, counter):
     # summarize history for accuracy
-    plt.plot(history.history['ca'])
-    plt.plot(history.history['val_ca'])
+    plt.plot(history.history['base_model_ca'])
+    plt.plot(history.history['base_model_1_ca'])
+    plt.plot(history.history['val_base_model_ca'])
+    plt.plot(history.history['val_base_model_1_ca'])
     plt.title('model accuracy')
     plt.ylabel('accuracy')
     plt.xlabel('epoch')
-    plt.legend(['train', 'test'], loc='upper left')
+    plt.legend(['train_pos', 'train_neg', 'test_pos', 'test_neg'], loc='upper left')
     plt.savefig('%s%s/accuracy-%i.png' % (history_save_path, id, counter))
     plt.clf()
 
     # summarize history for loss
     plt.plot(history.history['loss'])
+    plt.plot(history.history['base_model_loss'])
+    plt.plot(history.history['base_model_1_loss'])
     plt.plot(history.history['val_loss'])
+    plt.plot(history.history['val_base_model_loss'])
+    plt.plot(history.history['val_base_model_1_loss'])
     plt.title('model loss')
     plt.ylabel('loss')
     plt.xlabel('epoch')
-    plt.legend(['train', 'test'], loc='upper left')
+    plt.legend(['train_sum', 'train_pos', 'train_neg', 'test_sum', 'test_pos', 'test_neg'], loc='upper left')
     plt.savefig('%s%s/loss-%i.png' % (history_save_path, id, counter))
     plt.clf()
 
+def log_metrics(keys, scores, cvscores, counter, _run):
+    print('### metrics:')
+    for i, key in enumerate(keys):
+        print('%s: %f'  % (key, scores[i]))
+        _run.log_scalar(key, scores[i], counter)
+
+    print('### average:')
+    for idx, key in enumerate(keys):
+        tmp = []
+        for i, score in enumerate(cvscores):
+            tmp.append(score[idx])
+        print('avg %s:  %.2f%% (+/- %.2f%%)'  % (key, np.mean(tmp), np.std(tmp)))
+        
 @ingredient.capture
 def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience):
     id = _run._id
@@ -366,17 +422,17 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     np.random.seed(seed)
 
     # define 10-fold cross validation test harness
-    kfold = StratifiedKFold(n_splits=10, shuffle=True, random_state=seed)
+    kfold = StratifiedKFold(n_splits=3, shuffle=True, random_state=seed)
     cvscores = []
     generator = EyesMonthsDataGenerator()
     X, Y = generator.get_all_data()
     counter = 0
     
     # callbacks
-    filepath = "%s%s/weights-improvement-{epoch:02d}-{val_ca:.2f}.hdf5" % (history_save_path, id)
-    checkpoint = ModelCheckpoint(filepath, monitor='val_ca', verbose=0, save_best_only=True, mode='max')
+    filepath = "%s%s/weights-improvement-{epoch:02d}-{val_base_model_ca:.2f}.hdf5" % (history_save_path, id)
+    checkpoint = ModelCheckpoint(filepath, monitor='val_base_model_ca', verbose=0, save_best_only=True, mode='max')
     es = EarlyStopping(monitor='val_loss', mode='min', verbose=2, patience=patience)
-    callbacks_list = [checkpoint, es]
+    callbacks_list = [es, checkpoint]
 
     for train_indexes, test_indexes in kfold.split(X, Y): # return lists of indexes
         print('### K-Fold split: ', counter)
@@ -387,7 +443,8 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         generator.set_train_indexes(train_indexes)
 
         # create model
-        model = EyesMonthsClassifier().create_model()
+        model = EyesMonthsClassifier().create_train_model()
+        # model.summary()
         # plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
 
         # test data
@@ -397,15 +454,14 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         # trainX, trainY = generator.create_sample(train_indexes)
         # model.fit(trainX, trainY, batch_size=32, epochs=100)
 
+        # list all data in history
+        # print(history.history.keys())
+
         # evaluate the model
-        scores = model.evaluate(testX, testY, verbose=0)
-        print('test loss, test acc:', scores)
-        print("%s: %.2f%%" % (model.metrics_names[1], scores[1]*100))
-        cvscores.append(scores[1] * 100)
-        print("average acc: %.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
-        
-        _run.log_scalar("test.loss", scores[0], counter)
-        _run.log_scalar("test.accuracy", scores[1], counter)
+        scores = model.evaluate(testX, testY, verbose=0)      
+        cvscores.append(scores)
+
+        log_metrics(model.metrics_names, scores, cvscores, counter, _run)  
 
         plot(history, history_save_path, id, counter)
         
@@ -414,6 +470,4 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         # print("Saved model to disk")
 
         counter += 1
-    print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
-    _run.log_scalar("average.test.accuracy", "%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
     _run.log_scalar("#experiement", title)
