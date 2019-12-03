@@ -73,7 +73,6 @@ class EyesMonthsClassifier(object) :
         self.num_examples = num_examples
         self.input_size = input_size
 
-    # monat0-pos, monat3-pos, monat0.neg, monat3-neg
     def create_model(self):
         month0 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         month3 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
@@ -194,16 +193,17 @@ class EyesNumpySource(object):
         # self.examples[target][id] = images
         return images
 
-    def get_example(self, target, id):
-        # example by id
-        # return self.parse_example(self._load(target, id))
-        
-        # random example
-        if target == 'dmer':
-            example = self.get_pos_example()
+    def get_example(self, target, id, evenly_distributed):
+        if evenly_distributed:
+            # random example
+            if target == 'dmer':
+                example = self.get_pos_example()
+            else:
+                example = self.get_neg_example()
+            return self.parse_example(target, example)
         else:
-            example = self.get_neg_example()
-        return self.parse_example(example)
+            # example by id
+            return self.parse_example(target, self._load(target, id))
         # return parse_example(self.examples[target][id])
 
     def get_pos_example(self):
@@ -212,7 +212,8 @@ class EyesNumpySource(object):
     def get_neg_example(self):
         return self._load('dmenr', random.choice(list(self.files['dmenr'].keys())))
 
-    def parse_example(self, example):
+    @ingredient.capture
+    def parse_example(self, target, example):
         return example[0], example[1]
 
 class EyesMonthsDataGenerator(Sequence):
@@ -286,7 +287,7 @@ class EyesMonthsDataGenerator(Sequence):
                 target = 'dmenr'
             
             # sample
-            p0, p3 = self.data_source.get_example(target, id)
+            p0, p3 = self.data_source.get_example(target, id, evenly_distributed)
 
             indexes = list(range(self.num_examples))
             random.shuffle(indexes)
@@ -388,6 +389,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
 
         # create model
         model = EyesMonthsClassifier().create_model()
+
         # plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
 
         # test data
