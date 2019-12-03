@@ -310,7 +310,6 @@ class EyesMonthsDataGenerator(Sequence):
                     extras.append(self._mrtb(id))
                 if extra == 'hba1c':
                     extras.append(self._hba1c(id))
-            print(extras)
             EXTRA[0][counter] = extras
 
         return M0 + M3 + EXTRA, Y
