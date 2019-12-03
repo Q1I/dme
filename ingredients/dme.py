@@ -72,6 +72,7 @@ class EyesMonthsClassifier(object) :
     def __init__(self, num_examples, input_size):
         self.num_examples = num_examples
         self.input_size = input_size
+        self.num_extra = 1
 
     def create_train_model(self):
         month0_pos = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
@@ -80,20 +81,14 @@ class EyesMonthsClassifier(object) :
         month3_neg = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         
          # hier würde man dann zusätzliche Informationen erstellen:
-        num_extra = 1
-        extra_pos = Input((num_extra,))
-        extra_neg = Input((num_extra,))
+        extra = Input((self.num_extra,))
 
         base_model = self.create_base_model()
-        out_pos = base_model(month0_pos + month3_pos + [extra_pos])
-        out_neg = base_model(month0_neg + month3_neg + [extra_neg])
+        out_pos = base_model(month0_pos + month3_pos + [extra])
+        out_neg = base_model(month0_neg + month3_neg + [extra])
 
-        # Extra-Informationen werden dann hier konkateniert:
-        # out_pos = concatenate([out_pos, extra])
-        # out_neg = concatenate([out_neg, extra])
-
-        train_model = Model(month0_pos + month3_pos + [extra_pos] + month0_neg + month3_neg + [extra_neg], [out_pos, out_neg], name='train_model')
-        train_model.compile(loss='mse', optimizer='nadam', metrics=[ca, ca]) # ca
+        train_model = Model(month0_pos + month3_pos+ month0_neg + month3_neg + [extra], [out_pos, out_neg], name='train_model')
+        train_model.compile(loss='mse', optimizer='nadam', metrics=[ca]) # ca
         return train_model
 
     def create_base_model(self):
@@ -101,8 +96,7 @@ class EyesMonthsClassifier(object) :
         month3 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
 
         # hier würde man dann zusätzliche Informationen erstellen:
-        num_extra = 1
-        extra = Input((num_extra,))
+        extra = Input((self.num_extra,))
 
         encoder = self._create_encoder()
 
@@ -126,7 +120,7 @@ class EyesMonthsClassifier(object) :
         # Extra-Informationen werden dann hier konkateniert:
         enc = concatenate([enc, extra])
 
-        classifier = self._create_classifier(input_size=classifier_input_size + num_extra)
+        classifier = self._create_classifier(input_size=classifier_input_size + self.num_extra)
         out = classifier(enc)
 
         model = Model(month0 + month3 + [extra], out, name='base_model')
@@ -338,7 +332,7 @@ class EyesMonthsDataGenerator(Sequence):
             
             EXTRA[0][counter] = baselineData
 
-        return M0_POS + M3_POS + EXTRA + M0_NEG + M3_NEG + EXTRA, [Y_POS ,Y_NEG]
+        return M0_POS + M3_POS + M0_NEG + M3_NEG + EXTRA, [Y_POS ,Y_NEG]
 
     def set_train_indexes(self, indexes):
         self.train_indexes = indexes

@@ -13,8 +13,8 @@ ingredients = [dme_ingredient]
 
 ex = Experiment('dme',  ingredients)
 
-path = ''
-# path = '/scratch/ws/trng859b-dme/'
+# path = ''
+path = '/scratch/ws/trng859b-dme/'
 
 ##############
 ## observer ##
