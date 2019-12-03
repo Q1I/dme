@@ -3,7 +3,7 @@ import numpy as np
 import os
 import random
 import pandas as pd
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedKFold
 import tensorflow.keras.backend as K
 
@@ -409,7 +409,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         _run.log_scalar("test.loss", scores[0], counter)
         _run.log_scalar("test.accuracy", scores[1], counter)
 
-        plot(history, history_save_path, id, counter)
+        #plot(history, history_save_path, id, counter)
         
         # save model
         # model.save('%sdme-%s-%i.h5' % (model_save_path, id, counter))
