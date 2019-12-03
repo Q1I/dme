@@ -32,12 +32,7 @@ def cfg():
     patience = 10
     evenly_distributed = False
     # extras
-    num_extra = 4
-    use_baseline = True
-    use_cstb = True
-    use_mrtb = True
-    use_hba1c = True
-
+    extras = ['bcva','cstb','mrtb','hba1c']
 
 # skip layer, siehe https://arxiv.org/pdf/1512.03385.pdf, Abbildung 2
 @ingredient.capture
@@ -74,10 +69,10 @@ def down(x, dropout_rate, filters):
 # - die Encodings pro Zeitpunkt werden konkateniert und in den classifier gegeben
 class EyesMonthsClassifier(object) :
     @ingredient.capture
-    def __init__(self, num_examples, input_size, num_extra):
+    def __init__(self, num_examples, input_size, extras):
         self.num_examples = num_examples
         self.input_size = input_size
-        self.num_extra = num_extra
+        self.num_extra = len(extras)
 
     def create_model(self):
         month0 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
@@ -223,14 +218,15 @@ class EyesNumpySource(object):
 
 class EyesMonthsDataGenerator(Sequence):
     @ingredient.capture
-    def __init__(self, num_examples, input_size, batch_size, num_extra, excel_path):
+    def __init__(self, num_examples, input_size, batch_size, extras, excel_path):
         self.batch_size = batch_size
         self.num_examples = num_examples
         self.input_size = input_size
         self.data_source = EyesNumpySource() # TODO
-        self.extras = pd.read_excel(excel_path)
+        self.extras_csv = pd.read_excel(excel_path)
         self.shuffle = True
-        self.num_extra = num_extra
+        self.extras = extras
+        self.num_extra = len(extras)
 
         self.ids = [] # list of all ids
         self.labels = [] # list of labels
@@ -299,17 +295,23 @@ class EyesMonthsDataGenerator(Sequence):
             random.shuffle(indexes)
             indexes = indexes[:self.num_examples]
 
-            # extras
-            baselineData = self._baseline(id)
-            cstbData = self._cstb(id)
-            mrtbData = self._mrtb(id)
-            hba1c = self._hba1c(id)
-            
             for i in indexes:
                 M0[i][counter, :, :, 0] = p0[i]
                 M3[i][counter, :, :, 0] = p3[i]
             
-            EXTRA[0][counter] = [baselineData, cstbData, mrtbData, hba1c]
+            # extras
+            extras = []
+            for i, extra in enumerate(self.extras):
+                if extra == 'bcva':
+                    extras.append(self._bcva(id))
+                if extra == 'cstb':
+                    extras.append(self._cstb(id))
+                if extra == 'mrtb':
+                    extras.append(self._mrtb(id))
+                if extra == 'hba1c':
+                    extras.append(self._hba1c(id))
+            print(extras)
+            EXTRA[0][counter] = extras
 
         return M0 + M3 + EXTRA, Y
 
@@ -337,35 +339,23 @@ class EyesMonthsDataGenerator(Sequence):
 
     # extras
     @ingredient.capture
-    def _baseline(self, id, use_baseline):
-        if use_baseline:
-            return self.get_extra_value('Baseline BCVA (LogMAR)', id)
-        else:
-            return 0
+    def _bcva(self, id):
+        return self.get_extra_value('Baseline BCVA (LogMAR)', id)
     # Central subfield Thickness baseline (μm)
     @ingredient.capture
-    def _cstb(self, id, use_cstb):
-        if use_cstb:
-            return self.get_extra_value('Central subfield Thickness baseline (µm)', id) / 1000
-        else:
-            return 0
+    def _cstb(self, id):
+        return self.get_extra_value('Central subfield Thickness baseline (µm)', id) / 1000
     # Maximal retina thickness, baseline (µm)
     @ingredient.capture
-    def _mrtb(self, id, use_mrtb):
-        if use_mrtb:
-            return self.get_extra_value('Maximal retina thickness, baseline (µm)', id) / 1000
-        else:
-            return 0
+    def _mrtb(self, id):
+        return self.get_extra_value('Maximal retina thickness, baseline (µm)', id) / 1000
     # HbA1c at DME diagnosis, (%)
     @ingredient.capture
-    def _hba1c(self, id, use_hba1c):
-        if use_hba1c:
-            return self.get_extra_value('HbA1c at DME diagnosis, (%)', id) / 100
-        else:
-            return 0
-
+    def _hba1c(self, id):
+        return self.get_extra_value('HbA1c at DME diagnosis, (%)', id) / 100
+        
     def get_extra_value(self, column_name, id):
-        value = self.extras.loc[self.extras['ID'] == id][column_name].values[0]
+        value = self.extras_csv.loc[self.extras_csv['ID'] == id][column_name].values[0]
         if np.isnan(value):
             return 0
         else:

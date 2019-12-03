@@ -53,18 +53,13 @@ def update_cfg():
     verbose = 2
     patience = 40
     evenly_distributed = False
-    use_baseline = True
-    use_cstb = True
-    use_mrtb = True
-    use_hba1c = True
+    extras = ['bcva','cstb','mrtb','hba1c']
 
 @ex.automain
 def run(_run, title, dme):
     # parse_months_run()
-    title += ' - visus' if dme['use_baseline'] else ''
-    title += ' - cstb' if dme['use_cstb'] else ''
-    title += ' - mrtb' if dme['use_mrtb'] else ''
-    title += ' - hba1c' if dme['use_hba1c'] else ''
+    for label in dme['extras']:
+        title += ' - ' + label
     title += ' - evenly distributed examples' if dme['evenly_distributed'] else ''
     print('Start experiment: %s' % title)
     dme_run(_run, title)
