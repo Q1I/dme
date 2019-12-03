@@ -52,13 +52,19 @@ def update_cfg():
     history_save_path = path + 'logs/'
     verbose = 2
     patience = 40
-    use_baseline = True
     evenly_distributed = False
+    use_baseline = True
+    use_cstb = True
+    use_mrtb = True
+    use_hba1c = True
 
 @ex.automain
 def run(_run, title, dme):
     # parse_months_run()
-    title += ' - visus' if dme['use_baseline'] else ' - no extras'
+    title += ' - visus' if dme['use_baseline'] else ''
+    title += ' - cstb' if dme['use_cstb'] else ''
+    title += ' - mrtb' if dme['use_mrtb'] else ''
+    title += ' - hba1c' if dme['use_hba1c'] else ''
     title += ' - evenly distributed examples' if dme['evenly_distributed'] else ''
     print('Start experiment: %s' % title)
     dme_run(_run, title)

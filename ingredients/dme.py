@@ -30,8 +30,13 @@ def cfg():
     history_save_path = 'path_to_history_images'
     verbose = 2
     patience = 10
-    use_baseline = True
     evenly_distributed = False
+    # extras
+    num_extra = 4
+    use_baseline = True
+    use_cstb = True
+    use_mrtb = True
+    use_hba1c = True
 
 
 # skip layer, siehe https://arxiv.org/pdf/1512.03385.pdf, Abbildung 2
@@ -69,17 +74,17 @@ def down(x, dropout_rate, filters):
 # - die Encodings pro Zeitpunkt werden konkateniert und in den classifier gegeben
 class EyesMonthsClassifier(object) :
     @ingredient.capture
-    def __init__(self, num_examples, input_size):
+    def __init__(self, num_examples, input_size, num_extra):
         self.num_examples = num_examples
         self.input_size = input_size
+        self.num_extra = num_extra
 
     def create_model(self):
         month0 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         month3 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
 
         # hier würde man dann zusätzliche Informationen erstellen:
-        num_extra = 1
-        extra = Input((num_extra,))
+        extra = Input((self.num_extra,))
 
         encoder = self._create_encoder()
 
@@ -103,7 +108,7 @@ class EyesMonthsClassifier(object) :
         # Extra-Informationen werden dann hier konkateniert:
         enc = concatenate([enc, extra])
 
-        classifier = self._create_classifier(input_size=classifier_input_size + num_extra)
+        classifier = self._create_classifier(input_size=classifier_input_size + self.num_extra)
         out = classifier(enc)
 
         model = Model(month0 + month3 + [extra], out, name='eye_sum_model')
@@ -218,14 +223,15 @@ class EyesNumpySource(object):
 
 class EyesMonthsDataGenerator(Sequence):
     @ingredient.capture
-    def __init__(self, num_examples, input_size, batch_size, excel_path):
+    def __init__(self, num_examples, input_size, batch_size, num_extra, excel_path):
         self.batch_size = batch_size
         self.num_examples = num_examples
         self.input_size = input_size
         self.data_source = EyesNumpySource() # TODO
         self.extras = pd.read_excel(excel_path)
         self.shuffle = True
-        
+        self.num_extra = num_extra
+
         self.ids = [] # list of all ids
         self.labels = [] # list of labels
 
@@ -262,7 +268,7 @@ class EyesMonthsDataGenerator(Sequence):
         M0 = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         M3 = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         Y = np.zeros((self.batch_size, 2))
-        EXTRA = [np.zeros((self.batch_size, 1))]
+        EXTRA = [np.zeros((self.batch_size, self.num_extra))]
 
         dataset_size = len(Y)
         # Generate data
@@ -295,12 +301,15 @@ class EyesMonthsDataGenerator(Sequence):
 
             # extras
             baselineData = self._baseline(id)
+            cstbData = self._cstb(id)
+            mrtbData = self._mrtb(id)
+            hba1c = self._hba1c(id)
             
             for i in indexes:
                 M0[i][counter, :, :, 0] = p0[i]
                 M3[i][counter, :, :, 0] = p3[i]
             
-            EXTRA[0][counter] = baselineData
+            EXTRA[0][counter] = [baselineData, cstbData, mrtbData, hba1c]
 
         return M0 + M3 + EXTRA, Y
 
@@ -330,10 +339,37 @@ class EyesMonthsDataGenerator(Sequence):
     @ingredient.capture
     def _baseline(self, id, use_baseline):
         if use_baseline:
-            return self.extras.loc[self.extras['ID'] == id]['Baseline BCVA (LogMAR)'].values[0]
+            return self.get_extra_value('Baseline BCVA (LogMAR)', id)
+        else:
+            return 0
+    # Central subfield Thickness baseline (μm)
+    @ingredient.capture
+    def _cstb(self, id, use_cstb):
+        if use_cstb:
+            return self.get_extra_value('Central subfield Thickness baseline (µm)', id) / 1000
+        else:
+            return 0
+    # Maximal retina thickness, baseline (µm)
+    @ingredient.capture
+    def _mrtb(self, id, use_mrtb):
+        if use_mrtb:
+            return self.get_extra_value('Maximal retina thickness, baseline (µm)', id) / 1000
+        else:
+            return 0
+    # HbA1c at DME diagnosis, (%)
+    @ingredient.capture
+    def _hba1c(self, id, use_hba1c):
+        if use_hba1c:
+            return self.get_extra_value('HbA1c at DME diagnosis, (%)', id) / 100
         else:
             return 0
 
+    def get_extra_value(self, column_name, id):
+        value = self.extras.loc[self.extras['ID'] == id][column_name].values[0]
+        if np.isnan(value):
+            return 0
+        else:
+            return value
 
 def ca(y_true, y_pred):
     return 1 - K.mean(K.abs(y_true - y_pred))
