@@ -3,12 +3,13 @@ import numpy as np
 import os
 import random
 import pandas as pd
-#import matplotlib.pyplot as plt
+import glob
+# import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedKFold
 import tensorflow.keras.backend as K
 
 from tensorflow.keras.layers import *
-from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.models import Sequential, Model, load_model
 from tensorflow.keras.utils import *
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 
@@ -387,6 +388,19 @@ def plot(history, history_save_path, id, counter):
     plt.savefig('%s%s/loss-%i.png' % (history_save_path, id, counter))
     plt.clf()
 
+def log_metrics(keys, scores, cvscores, counter, _run):
+    print('### metrics:')
+    for i, key in enumerate(keys):
+        print('%s: %f'  % (key, scores[i]))
+        _run.log_scalar(key, scores[i], counter)
+        
+    print('### average:')
+    for idx, key in enumerate(keys):
+        tmp = []
+        for i, score in enumerate(cvscores):
+            tmp.append(score[idx])
+        print('avg %s:  %.2f%% (+/- %.2f%%) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(tmp), np.std(tmp), np.max(tmp), np.min(tmp)))
+
 @ingredient.capture
 def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience):
     id = _run._id
@@ -402,16 +416,24 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     counter = 0
     
     # callbacks
-    filepath = "%s%s/weights-improvement-{epoch:02d}-{val_ca:.2f}.hdf5" % (history_save_path, id)
-    checkpoint = ModelCheckpoint(filepath, monitor='val_ca', verbose=0, save_best_only=True, mode='max')
-    es = EarlyStopping(monitor='loss', mode='min', verbose=2, patience=patience)
-    callbacks_list = [checkpoint, es]
+    history_id_path = "%s%s/" % (history_save_path, id)
+    total_path = history_id_path + 'weights-improvement-{val_ca:.2f}.hdf5'
+    # total_path = history_id_path + 'weights-improvement-{epoch:02d}-{val_ca:.2f}.hdf5'
+    checkpoint = ModelCheckpoint(total_path, monitor='val_ca', verbose=0, save_best_only=True, mode='max')
+    es = EarlyStopping(monitor='val_ca', mode='max', verbose=2, patience=patience)
 
     for train_indexes, test_indexes in kfold.split(X, Y): # return lists of indexes
         print('### K-Fold split: ', counter)
         print('train indexes: ', train_indexes)
         print('test indexes: ', test_indexes)
         
+        # checkpoint: save max weight of current fold 
+        temp_path = history_id_path + 'weights-temp.hdf5'
+        temp_checkpoint = ModelCheckpoint(temp_path, monitor='val_ca', verbose=0, save_best_only=True, mode='max')
+        
+        # callback
+        callbacks_list = [checkpoint, temp_checkpoint, es]
+
         # set train data indexes for generator
         generator.set_train_indexes(train_indexes)
 
@@ -421,29 +443,35 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         # plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
 
         # test data
-        testX, testY = generator.data_generation(test_indexes)
+        testX, testY = generator.data_generation(test_indexes, False)
+
         # Fit the model
         history = model.fit_generator(generator, validation_data=(testX, testY), epochs=epochs, verbose=verbose, callbacks=callbacks_list)
-        # trainX, trainY = generator.create_sample(train_indexes)
-        # model.fit(trainX, trainY, batch_size=32, epochs=100)
+
+        # load model with best val_ca
+        best_model_path = max(glob.iglob(temp_path), key=os.path.getctime)
+        model = EyesMonthsClassifier().create_model()
+        model.load_weights(best_model_path)
 
         # evaluate the model
-        scores = model.evaluate(testX, testY, verbose=0)
-        print('test loss, test acc:', scores)
-        print("%s: %.2f%%" % (model.metrics_names[1], scores[1]*100))
-        cvscores.append(scores[1] * 100)
-        print("average acc: %.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
+        scores = model.evaluate(testX, testY, verbose=2)
         
-        _run.log_scalar("test.loss", scores[0], counter)
-        _run.log_scalar("test.accuracy", scores[1], counter)
+        cvscores.append(scores)
+        log_metrics(model.metrics_names, scores, cvscores, counter, _run)  
 
-        #plot(history, history_save_path, id, counter)
+        # plot(history, history_save_path, id, counter)
         
         # save model
         # model.save('%sdme-%s-%i.h5' % (model_save_path, id, counter))
         # print("Saved model to disk")
 
         counter += 1
-    print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
-    _run.log_scalar("average.test.accuracy", "%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
+    print('### average:')
+    for idx, key in enumerate(model.metrics_names):
+        tmp = []
+        for i, score in enumerate(cvscores):
+            tmp.append(score[idx])
+        _run.log_scalar(key, 'avg %s:  %.2f%% (+/- %.2f%%) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(tmp), np.std(tmp), np.max(tmp), np.min(tmp)))
+    # print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
+    # _run.log_scalar("average.test.accuracy", "%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
     _run.log_scalar("#experiement", title)
