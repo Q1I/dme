@@ -404,7 +404,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     # callbacks
     filepath = "%s%s/weights-improvement-{epoch:02d}-{val_ca:.2f}.hdf5" % (history_save_path, id)
     checkpoint = ModelCheckpoint(filepath, monitor='val_ca', verbose=0, save_best_only=True, mode='max')
-    es = EarlyStopping(monitor='val_loss', mode='min', verbose=2, patience=patience)
+    es = EarlyStopping(monitor='loss', mode='min', verbose=2, patience=patience)
     callbacks_list = [checkpoint, es]
 
     for train_indexes, test_indexes in kfold.split(X, Y): # return lists of indexes
