@@ -194,24 +194,28 @@ class EyesNumpySource(object):
         # self.examples[target][id] = images
         return images
 
-    def get_example(self, target, id, evenly_distributed):
+    def get_example(self, target, id, evenly_distributed, ids):
         if evenly_distributed:
             # random example
             if target == 'dmer':
-                example = self.get_pos_example()
+                example = self.get_pos_example(ids)
             else:
-                example = self.get_neg_example()
+                example = self.get_neg_example(ids)
             return self.parse_example(target, example)
         else:
             # example by id
             return self.parse_example(target, self._load(target, id))
         # return parse_example(self.examples[target][id])
 
-    def get_pos_example(self):
-        return self._load('dmer', random.choice(list(self.files['dmer'].keys())))
+    def get_pos_example(self, training_ids):
+        all_positives = list(self.files['dmer'].keys())
+        positives = [x for x in training_ids if x in all_positives]
+        return self._load('dmer', random.choice(positives))
 
-    def get_neg_example(self):
-        return self._load('dmenr', random.choice(list(self.files['dmenr'].keys())))
+    def get_neg_example(self, training_ids):
+        all_negatives = list(self.files['dmenr'].keys())
+        negatives = [x for x in training_ids if x in all_negatives]
+        return self._load('dmenr', random.choice(negatives))
 
     @ingredient.capture
     def parse_example(self, target, example):
@@ -268,6 +272,7 @@ class EyesMonthsDataGenerator(Sequence):
         EXTRA = [np.zeros((self.batch_size, self.num_extra))]
 
         dataset_size = len(Y)
+        ids = []
         # Generate data
         for counter, idx in enumerate(index_list):
             if counter >= dataset_size:
@@ -278,6 +283,8 @@ class EyesMonthsDataGenerator(Sequence):
             # evenly distributed pos and neg examples
             if evenly_distributed:
                 condition = counter < self.batch_size // 2
+                # Find list of IDs
+                ids = [self.ids[k] for k in self.train_indexes]
             else: # no distribution, use index_list
                 condition = self.labels[idx] == 0
 
@@ -290,7 +297,7 @@ class EyesMonthsDataGenerator(Sequence):
                 target = 'dmenr'
             
             # sample
-            p0, p3 = self.data_source.get_example(target, id, evenly_distributed)
+            p0, p3 = self.data_source.get_example(target, id, evenly_distributed, ids)
 
             indexes = list(range(self.num_examples))
             random.shuffle(indexes)
@@ -428,11 +435,11 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         print('test indexes: ', test_indexes)
         
         # checkpoint: save max weight of current fold 
-        temp_path = history_id_path + 'weights-temp.hdf5'
-        temp_checkpoint = ModelCheckpoint(temp_path, monitor='val_ca', verbose=0, save_best_only=True, mode='max')
+        tmp_path = history_id_path + 'weights-tmp.hdf5'
+        tmp_checkpoint = ModelCheckpoint(tmp_path, monitor='val_ca', verbose=0, save_best_only=True, save_weights_only=True, mode='max')
         
         # callback
-        callbacks_list = [checkpoint, temp_checkpoint, es]
+        callbacks_list = [checkpoint, tmp_checkpoint, es]
 
         # set train data indexes for generator
         generator.set_train_indexes(train_indexes)
@@ -449,9 +456,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         history = model.fit_generator(generator, validation_data=(testX, testY), epochs=epochs, verbose=verbose, callbacks=callbacks_list)
 
         # load model with best val_ca
-        best_model_path = max(glob.iglob(temp_path), key=os.path.getctime)
-        model = EyesMonthsClassifier().create_model()
-        model.load_weights(best_model_path)
+        model.load_weights(tmp_path)
 
         # evaluate the model
         scores = model.evaluate(testX, testY, verbose=2)
