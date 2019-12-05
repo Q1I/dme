@@ -8,7 +8,7 @@ from sklearn.model_selection import StratifiedKFold
 import tensorflow.keras.backend as K
 
 from tensorflow.keras.layers import *
-from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.models import Sequential, Model, load_model
 from tensorflow.keras.utils import *
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 
@@ -30,9 +30,10 @@ def cfg():
     history_save_path = 'path_to_history_images'
     verbose = 2
     patience = 10
-    use_baseline = True
     evenly_distributed = False
-
+    test_all = False # use all data for testing (ignore kfold)
+    # extras
+    extras = ['bcva','cstb','mrtb','hba1c']
 
 # skip layer, siehe https://arxiv.org/pdf/1512.03385.pdf, Abbildung 2
 @ingredient.capture
@@ -69,10 +70,10 @@ def down(x, dropout_rate, filters):
 # - die Encodings pro Zeitpunkt werden konkateniert und in den classifier gegeben
 class EyesMonthsClassifier(object) :
     @ingredient.capture
-    def __init__(self, num_examples, input_size):
+    def __init__(self, num_examples, input_size, extras):
         self.num_examples = num_examples
         self.input_size = input_size
-        self.num_extra = 1
+        self.num_extra = len(extras)
 
     def create_train_model(self):
         month0_pos = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
@@ -208,24 +209,28 @@ class EyesNumpySource(object):
         # self.examples[target][id] = images
         return images
 
-    def get_example(self, target, id, evenly_distributed):
+    def get_example(self, target, id, evenly_distributed, ids):
         if evenly_distributed:
             # random example
             if target == 'dmer':
-                example = self.get_pos_example()
+                example = self.get_pos_example(ids)
             else:
-                example = self.get_neg_example()
+                example = self.get_neg_example(ids)
             return self.parse_example(target, example)
         else:
-             # example by id
+            # example by id
             return self.parse_example(target, self._load(target, id))
         # return parse_example(self.examples[target][id])
 
-    def get_pos_example(self):
-        return self._load('dmer', random.choice(list(self.files['dmer'].keys())))
+    def get_pos_example(self, training_ids):
+        all_positives = list(self.files['dmer'].keys())
+        positives = [x for x in training_ids if x in all_positives]
+        return self._load('dmer', random.choice(positives))
 
-    def get_neg_example(self):
-        return self._load('dmenr', random.choice(list(self.files['dmenr'].keys())))
+    def get_neg_example(self, training_ids):
+        all_negatives = list(self.files['dmenr'].keys())
+        negatives = [x for x in training_ids if x in all_negatives]
+        return self._load('dmenr', random.choice(negatives))
 
     # return p0, p3, n0, n3 
     @ingredient.capture
@@ -237,14 +242,16 @@ class EyesNumpySource(object):
 
 class EyesMonthsDataGenerator(Sequence):
     @ingredient.capture
-    def __init__(self, num_examples, input_size, batch_size, excel_path):
+    def __init__(self, num_examples, input_size, batch_size, extras, excel_path):
         self.batch_size = batch_size
         self.num_examples = num_examples
         self.input_size = input_size
         self.data_source = EyesNumpySource() # TODO
-        self.extras = pd.read_excel(excel_path)
+        self.extras_csv = pd.read_excel(excel_path)
         self.shuffle = True
-        
+        self.extras = extras
+        self.num_extra = len(extras)
+
         self.ids = [] # list of all ids
         self.labels = [] # list of labels
 
@@ -284,7 +291,9 @@ class EyesMonthsDataGenerator(Sequence):
         M3_NEG = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         Y_POS = np.zeros((self.batch_size, 2))
         Y_NEG = np.zeros((self.batch_size, 2))
-        EXTRA = [np.zeros((self.batch_size, 1))]
+        EXTRA = [np.zeros((self.batch_size, self.num_extra))]
+
+        ids = []
 
         # Generate data
         for counter, idx in enumerate(index_list):
@@ -296,6 +305,8 @@ class EyesMonthsDataGenerator(Sequence):
             # evenly distributed pos and neg examples
             if evenly_distributed:
                 condition = counter < self.batch_size // 2
+                # Find list of IDs
+                ids = [self.ids[k] for k in self.train_indexes]
             else: # no distribution, use index_list
                 condition = self.labels[idx] == 0
 
@@ -310,15 +321,12 @@ class EyesMonthsDataGenerator(Sequence):
                 target = 'dmenr'
             
             # sample
-            p0, p3, n0, n3 = self.data_source.get_example(target, id, evenly_distributed)
+            p0, p3, n0, n3 = self.data_source.get_example(target, id, evenly_distributed, ids)
 
             indexes = list(range(self.num_examples))
             random.shuffle(indexes)
             indexes = indexes[:self.num_examples]
 
-            # extras
-            baselineData = self._baseline(id)
-            
             for i in indexes:
                 if p0 is not None:
                     M0_POS[i][counter, :, :, 0] = p0[i]
@@ -329,7 +337,21 @@ class EyesMonthsDataGenerator(Sequence):
                 if n3 is not None:
                     M3_NEG[i][counter, :, :, 0] = n3[i]
             
-            EXTRA[0][counter] = baselineData
+            # extras
+            extras = []
+            for i, extra in enumerate(self.extras):
+                if extra == 'bcva':
+                    extras.append(self._bcva(id))
+                if extra == 'cstb':
+                    extras.append(self._cstb(id))
+                if extra == 'mrtb':
+                    extras.append(self._mrtb(id))
+                if extra == 'hba1c':
+                    extras.append(self._hba1c(id))
+                if extra == 'no-extras':
+                    extras.append(0)
+
+            EXTRA[0][counter] = extras
 
         return M0_POS + M3_POS + M0_NEG + M3_NEG + EXTRA, [Y_POS ,Y_NEG]
 
@@ -357,12 +379,27 @@ class EyesMonthsDataGenerator(Sequence):
 
     # extras
     @ingredient.capture
-    def _baseline(self, id, use_baseline):
-        if use_baseline:
-            return self.extras.loc[self.extras['ID'] == id]['Baseline BCVA (LogMAR)'].values[0]
-        else:
+    def _bcva(self, id):
+        return self.get_extra_value('Baseline BCVA (LogMAR)', id)
+    # Central subfield Thickness baseline (μm)
+    @ingredient.capture
+    def _cstb(self, id):
+        return self.get_extra_value('Central subfield Thickness baseline (µm)', id) / 1000
+    # Maximal retina thickness, baseline (µm)
+    @ingredient.capture
+    def _mrtb(self, id):
+        return self.get_extra_value('Maximal retina thickness, baseline (µm)', id) / 1000
+    # HbA1c at DME diagnosis, (%)
+    @ingredient.capture
+    def _hba1c(self, id):
+        return self.get_extra_value('HbA1c at DME diagnosis, (%)', id) / 100
+        
+    def get_extra_value(self, column_name, id):
+        value = self.extras_csv.loc[self.extras_csv['ID'] == id][column_name].values[0]
+        if np.isnan(value):
             return 0
-
+        else:
+            return value
 
 def ca(y_true, y_pred):
     return 1 - K.mean(K.abs(y_true - y_pred))
@@ -395,20 +432,19 @@ def plot(history, history_save_path, id, counter):
     plt.clf()
 
 def log_metrics(keys, scores, cvscores, counter, _run):
-    print('### metrics:')
+    print('### test metrics:')
     for i, key in enumerate(keys):
         print('%s: %f'  % (key, scores[i]))
         _run.log_scalar(key, scores[i], counter)
-
-    print('### average:')
+    print('### test average:')
     for idx, key in enumerate(keys):
         tmp = []
         for i, score in enumerate(cvscores):
             tmp.append(score[idx])
-        print('avg %s:  %.2f%% (+/- %.2f%%)'  % (key, np.mean(tmp), np.std(tmp)))
-        
+        print('avg %s:  %.2f%% (+/- %.2f%%) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(tmp), np.std(tmp), np.max(tmp), np.min(tmp)))
+
 @ingredient.capture
-def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience):
+def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all):
     id = _run._id
     # fix random seed for reproducibility
     seed = 7
@@ -422,36 +458,49 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     counter = 0
     
     # callbacks
-    filepath = "%s%s/weights-improvement-{epoch:02d}-{pos_ca:.2f}.hdf5" % (history_save_path, id)
-    checkpoint = ModelCheckpoint(filepath, monitor='pos_ca', verbose=0, save_best_only=True, mode='max')
-    es = EarlyStopping(monitor='pos_loss', mode='min', verbose=2, patience=patience)
-    callbacks_list = [es, checkpoint]
+    history_id_path = "%s%s/" % (history_save_path, id)
+    total_path = history_id_path + 'weights-improvement-{pos_ca:.2f}.hdf5'
+    checkpoint = ModelCheckpoint(total_path, monitor='pos_ca', verbose=0, save_best_only=True, mode='max')
+    es = EarlyStopping(monitor='pos_ca', mode='max', verbose=2, patience=patience)
 
     for train_indexes, test_indexes in kfold.split(X, Y): # return lists of indexes
         print('### K-Fold split: ', counter)
         print('train indexes: ', train_indexes)
         print('test indexes: ', test_indexes)
         
+        # checkpoint: save max weight of current fold 
+        tmp_path = history_id_path + 'weights-tmp.hdf5'
+        tmp_checkpoint = ModelCheckpoint(tmp_path, monitor='pos_ca', verbose=0, save_best_only=True, save_weights_only=True, mode='max')
+        
+        # callback
+        callbacks_list = [checkpoint, tmp_checkpoint, es]
+
         # set train data indexes for generator
         generator.set_train_indexes(train_indexes)
 
         # create model
         model = EyesMonthsClassifier().create_train_model()
-        # model.summary()
+
         # plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
 
         # test data
-        testX, testY = generator.data_generation(test_indexes)
+        if test_all:
+            testX, testY = generator.data_generation(test_indexes, False)
+        else:
+            testX, testY = generator.data_generation(range(len(Y)), False)
+
         # Fit the model
         history = model.fit_generator(generator, validation_data=(testX, testY), epochs=epochs, verbose=verbose, callbacks=callbacks_list)
-        # trainX, trainY = generator.create_sample(train_indexes)
-        # model.fit(trainX, trainY, batch_size=32, epochs=100)
+
+        # load model with best pos_ca
+        model.load_weights(tmp_path)
 
         # list all data in history
         # print(history.history.keys())
 
         # evaluate the model
-        scores = model.evaluate(testX, testY, verbose=0)      
+        scores = model.evaluate(testX, testY, verbose=2)
+        
         cvscores.append(scores)
 
         log_metrics(model.metrics_names, scores, cvscores, counter, _run)  
