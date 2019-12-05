@@ -53,6 +53,7 @@ def update_cfg():
     verbose = 2
     patience = 40
     evenly_distributed = False
+    test_all = False
     extras = ['bcva','cstb','mrtb','hba1c']
 
 @ex.automain
@@ -61,6 +62,7 @@ def run(_run, title, dme):
     for label in dme['extras']:
         title += ' - ' + label
     title += ' - evenly distributed examples' if dme['evenly_distributed'] else ''
+    title += ' - use all data for testing' if dme['test_all'] else ''
     print('Start experiment: %s' % title)
     dme_run(_run, title)
     print('End experiment: %s' % title)

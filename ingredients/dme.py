@@ -32,6 +32,7 @@ def cfg():
     verbose = 2
     patience = 10
     evenly_distributed = False
+    test_all = False # use all data for testing (ignore kfold)
     # extras
     extras = ['bcva','cstb','mrtb','hba1c']
 
@@ -409,7 +410,7 @@ def log_metrics(keys, scores, cvscores, counter, _run):
         print('avg %s:  %.2f%% (+/- %.2f%%) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(tmp), np.std(tmp), np.max(tmp), np.min(tmp)))
 
 @ingredient.capture
-def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience):
+def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all):
     id = _run._id
     # fix random seed for reproducibility
     seed = 7
@@ -450,7 +451,10 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         # plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
 
         # test data
-        testX, testY = generator.data_generation(test_indexes, False)
+        if test_all:
+            testX, testY = generator.data_generation(test_indexes, False)
+        else:
+            testX, testY = generator.data_generation(range(len(Y)), False)
 
         # Fit the model
         history = model.fit_generator(generator, validation_data=(testX, testY), epochs=epochs, verbose=verbose, callbacks=callbacks_list)
@@ -471,12 +475,13 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         # print("Saved model to disk")
 
         counter += 1
-    print('### average:')
-    for idx, key in enumerate(model.metrics_names):
-        tmp = []
-        for i, score in enumerate(cvscores):
-            tmp.append(score[idx])
-        _run.log_scalar(key, 'avg %s:  %.2f%% (+/- %.2f%%) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(tmp), np.std(tmp), np.max(tmp), np.min(tmp)))
+    # print('### average:')
+    # for idx, key in enumerate(model.metrics_names):
+    #     tmp = []
+    #     for i, score in enumerate(cvscores):
+    #         tmp.append(score[idx])
+    #     _run.log_scalar(key, 'avg %s:  %.2f%% (+/- %.2f%%) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(tmp), np.std(tmp), np.max(tmp), np.min(tmp)))
+    
     # print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
     # _run.log_scalar("average.test.accuracy", "%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
     _run.log_scalar("#experiement", title)
