@@ -83,15 +83,14 @@ class EyesMonthsClassifier(object) :
          # hier würde man dann zusätzliche Informationen erstellen:
         extra = Input((self.num_extra,))
 
-        base_model = self.create_base_model()
-        out_pos = base_model(month0_pos + month3_pos + [extra])
-        out_neg = base_model(month0_neg + month3_neg + [extra])
+        out_pos = self.create_base_model('pos')(month0_pos + month3_pos + [extra])
+        out_neg = self.create_base_model('neg')(month0_neg + month3_neg + [extra])
 
         train_model = Model(month0_pos + month3_pos+ month0_neg + month3_neg + [extra], [out_pos, out_neg], name='train_model')
         train_model.compile(loss='mse', optimizer='nadam', metrics=[ca]) # ca
         return train_model
 
-    def create_base_model(self):
+    def create_base_model(self, name='base_model'):
         month0 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         month3 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
 
@@ -123,7 +122,7 @@ class EyesMonthsClassifier(object) :
         classifier = self._create_classifier(input_size=classifier_input_size + self.num_extra)
         out = classifier(enc)
 
-        model = Model(month0 + month3 + [extra], out, name='base_model')
+        model = Model(month0 + month3 + [extra], out, name=name)
 
         return model
 
@@ -423,9 +422,9 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     counter = 0
     
     # callbacks
-    filepath = "%s%s/weights-improvement-{epoch:02d}-{val_base_model_ca:.2f}.hdf5" % (history_save_path, id)
-    checkpoint = ModelCheckpoint(filepath, monitor='val_base_model_ca', verbose=0, save_best_only=True, mode='max')
-    es = EarlyStopping(monitor='val_loss', mode='min', verbose=2, patience=patience)
+    filepath = "%s%s/weights-improvement-{epoch:02d}-{pos_ca:.2f}.hdf5" % (history_save_path, id)
+    checkpoint = ModelCheckpoint(filepath, monitor='pos_ca', verbose=0, save_best_only=True, mode='max')
+    es = EarlyStopping(monitor='pos_loss', mode='min', verbose=2, patience=patience)
     callbacks_list = [es, checkpoint]
 
     for train_indexes, test_indexes in kfold.split(X, Y): # return lists of indexes
