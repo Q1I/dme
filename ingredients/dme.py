@@ -85,9 +85,9 @@ class EyesMonthsClassifier(object) :
         extra = Input((self.num_extra,))
 
         out_pos = self.create_base_model('pos')(month0_pos + month3_pos + [extra])
-        out_neg = self.create_base_model('neg')(month0_neg + month3_neg + [extra])
+        # out_neg = self.create_base_model('neg')(month0_neg + month3_neg + [extra])
 
-        train_model = Model(month0_pos + month3_pos+ month0_neg + month3_neg + [extra], [out_pos, out_neg], name='train_model')
+        train_model = Model(month0_pos + month3_pos+ month0_neg + month3_neg + [extra], out_pos, name='train_model')
         train_model.compile(loss='mse', optimizer='nadam', metrics=[ca]) # ca
         return train_model
 
@@ -313,11 +313,9 @@ class EyesMonthsDataGenerator(Sequence):
             # label
             if condition:
                 Y_POS[counter, 0] = 1
-                Y_NEG[counter, 1] = 1
                 target = 'dmer'
             else:
                 Y_POS[counter, 1] = 1
-                Y_NEG[counter, 0] = 1
                 target = 'dmenr'
             
             # sample
@@ -353,7 +351,7 @@ class EyesMonthsDataGenerator(Sequence):
 
             EXTRA[0][counter] = extras
 
-        return M0_POS + M3_POS + M0_NEG + M3_NEG + EXTRA, [Y_POS ,Y_NEG]
+        return M0_POS + M3_POS + M0_NEG + M3_NEG + EXTRA, Y_POS
 
     def set_train_indexes(self, indexes):
         self.train_indexes = indexes
@@ -504,9 +502,9 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     
     # callbacks
     history_id_path = "%s%s/" % (history_save_path, id)
-    total_path = history_id_path + 'weights-improvement-{pos_ca:.2f}.hdf5'
-    checkpoint = ModelCheckpoint(total_path, monitor='pos_ca', verbose=0, save_best_only=True, mode='max')
-    es = EarlyStopping(monitor='pos_ca', mode='max', verbose=2, patience=patience)
+    total_path = history_id_path + 'weights-improvement-{val_ca:.2f}.hdf5'
+    checkpoint = ModelCheckpoint(total_path, monitor='val_ca', verbose=0, save_best_only=True, mode='max')
+    es = EarlyStopping(monitor='val_ca', mode='max', verbose=2, patience=patience)
 
     for train_indexes, test_indexes in kfold.split(X, Y): # return lists of indexes
         print('### K-Fold split: ', counter)
