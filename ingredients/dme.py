@@ -10,7 +10,7 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.layers import *
 from tensorflow.keras.models import Sequential, Model, load_model
 from tensorflow.keras.utils import *
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, Callback
 
 from sacred import Ingredient
 
@@ -431,17 +431,62 @@ def plot(history, history_save_path, id, counter):
     plt.savefig('%s%s/loss-%i.png' % (history_save_path, id, counter))
     plt.clf()
 
-def log_metrics(keys, scores, cvscores, counter, _run):
-    print('### test metrics:')
-    for i, key in enumerate(keys):
-        print('%s: %f'  % (key, scores[i]))
-        _run.log_scalar(key, scores[i], counter)
-    print('### test average:')
-    for idx, key in enumerate(keys):
-        tmp = []
-        for i, score in enumerate(cvscores):
-            tmp.append(score[idx])
-        print('avg %s:  %.2f%% (+/- %.2f%%) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(tmp), np.std(tmp), np.max(tmp), np.min(tmp)))
+def log_metrics(scores, cvscores, counter, _run):
+    """
+    log metrics to cout.txt and metrics.txt 
+    :param dict scores: Avg scores from 1 cv-run {'loss': 0.1, ..} 
+    :param dict cvscores: Avg scores from all cv-runs [{'loss': 0.1, ..}, ..] 
+    :param int counter: number of cv run
+    """
+    print('### metrics for #%i cv-run (avg of last 10 metrics of the run):' % counter)
+    for key, value in scores.items():
+        print('%s: %f'  % (key, value))
+        _run.log_scalar(key, value, counter)
+
+    log_average_scores([*scores], cvscores)
+
+def log_average_scores(keys, scores):
+    print('### average:')
+    tmp = {}
+    for key in keys:
+        for i, score in enumerate(scores):
+            if key not in tmp:
+                tmp[key]=[]
+            tmp[key].append(score[key])
+        print('avg %s:  %.2f%% (+/- %.2f%%) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(tmp[key]), np.std(tmp[key]), np.max(tmp[key]), np.min(tmp[key])))
+
+class MetricsHistory(Callback):
+    def __init__(self):
+        self.logs = []
+        self.max_size = 10
+        self.scores = {}
+
+    def on_train_begin(self, logs={}):
+        self.logs = []
+
+    def on_train_end(self, logs={}):
+        # {'loss': [0.1, 0.2, ..], 'val_loss': [0.2, ..], ..}
+        tmp = {}
+        # self.logs = [ {'loss': 0.1, 'val_loss': 0.2, ..}, ..]
+        for log in self.logs:
+            for i, metric in enumerate(log):
+                if metric not in tmp:
+                    tmp[metric]=[]
+                tmp[metric].append(log[metric])
+        avg_scores = {}
+        for i,key in enumerate(tmp):
+            # print('avg_scores %s:  %.2f%% (+/- %.2f%%) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(scores), np.std(scores), np.max(scores), np.min(scores)))
+            avg_scores[key] = np.mean(tmp[key])
+        # {'loss': 0.1, ..}
+        self.scores = avg_scores
+
+    def on_epoch_end(self, epoch, logs={}):
+        if len(self.logs) >= self.max_size:
+            del self.logs[0]
+        self.logs.append(logs)
+
+    def get_scores(self):
+        return self.scores
 
 @ingredient.capture
 def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all):
@@ -469,11 +514,14 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         print('test indexes: ', test_indexes)
         
         # checkpoint: save max weight of current fold 
-        tmp_path = history_id_path + 'weights-tmp.hdf5'
-        tmp_checkpoint = ModelCheckpoint(tmp_path, monitor='pos_ca', verbose=0, save_best_only=True, save_weights_only=True, mode='max')
+        # tmp_path = history_id_path + 'weights-tmp.hdf5'
+        # tmp_checkpoint = ModelCheckpoint(tmp_path, monitor='pos_ca', verbose=0, save_best_only=True, save_weights_only=True, mode='max')
         
+        # metrics Callback
+        mh = MetricsHistory()
+
         # callback
-        callbacks_list = [checkpoint, tmp_checkpoint, es]
+        callbacks_list = [checkpoint, es, mh]
 
         # set train data indexes for generator
         generator.set_train_indexes(train_indexes)
@@ -493,17 +541,18 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         history = model.fit_generator(generator, validation_data=(testX, testY), epochs=epochs, verbose=verbose, callbacks=callbacks_list)
 
         # load model with best pos_ca
-        model.load_weights(tmp_path)
+        # model.load_weights(tmp_path)
 
         # list all data in history
         # print(history.history.keys())
 
         # evaluate the model
-        scores = model.evaluate(testX, testY, verbose=2)
-        
+        # scores = model.evaluate(testX, testY, verbose=2)
+        scores = mh.get_scores()
+
         cvscores.append(scores)
 
-        log_metrics(model.metrics_names, scores, cvscores, counter, _run)  
+        log_metrics(scores, cvscores, counter, _run)  
 
         # plot(history, history_save_path, id, counter)
         
