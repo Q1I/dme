@@ -46,13 +46,13 @@ def update_cfg():
     numpy_source_path = path + 'data/parsed'
     dropout_rate = 0.5
     filters = 32
-    epochs = 100
+    epochs = 200
     excel_path = path + 'data/dme-extras.xlsx'
     model_save_path = path + 'data/models/'
     history_save_path = path + 'logs/'
     verbose = 2
     patience = 40
-    evenly_distributed = False
+    evenly_distributed = True
     test_all = False
     extras = ['bcva','cstb','mrtb','hba1c']
 
