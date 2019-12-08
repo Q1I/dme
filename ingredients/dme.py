@@ -405,7 +405,7 @@ def log_metrics(scores, cvscores, counter, _run):
     log_average_scores([*scores], cvscores)
 
 def log_average_scores(keys, scores):
-    print('### average:', keys, scores)
+    print('### average:')
     tmp = {}
     for key in keys:
         for i, score in enumerate(scores):
