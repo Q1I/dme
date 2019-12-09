@@ -427,18 +427,18 @@ def log_average_scores(keys, scores):
 
 class MetricsHistory(Callback):
     def __init__(self):
-        self.logs = []
-        self.max_size = 10
+        self.logs_list = []
+        self.max_size = 3
         self.scores = {}
 
     def on_train_begin(self, logs={}):
-        self.logs = []
+        self.logs_list = []
 
     def on_train_end(self, logs={}):
         # {'loss': [0.1, 0.2, ..], 'val_loss': [0.2, ..], ..}
         tmp = {}
-        # self.logs = [ {'loss': 0.1, 'val_loss': 0.2, ..}, ..]
-        for log in self.logs:
+        # self.logs_list = [ {'loss': 0.1, 'val_loss': 0.2, ..}, ..]
+        for log in self.logs_list:
             for i, metric in enumerate(log):
                 if metric not in tmp:
                     tmp[metric]=[]
@@ -452,11 +452,12 @@ class MetricsHistory(Callback):
         self.scores = avg_scores
 
     def on_epoch_end(self, epoch, logs={}):
-        if len(self.logs) >= self.max_size:
+        print('START self.logs: ', self.logs_list)
+        if len(self.logs_list) >= self.max_size:
             del self.logs[0]
-        self.logs.append(logs)
+        self.logs_list.append(logs)
         print('on_epoch_end: ',logs)
-        print('self.logs: ', self.logs)
+        print('END self.logs: ', self.logs_list)
 
     def get_scores(self):
         return self.scores
