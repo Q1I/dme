@@ -454,10 +454,10 @@ class MetricsHistory(Callback):
     def on_epoch_end(self, epoch, logs={}):
         print('START self.logs: ', self.logs_list)
         if len(self.logs_list) >= self.max_size:
-            del self.logs[0]
+            del self.logs_list[0]
         self.logs_list.append(logs)
         print('on_epoch_end: ',logs)
-        print('END self.logs: ', self.logs_list)
+        print('END self.logs_list: ', self.logs_list)
 
     def get_scores(self):
         return self.scores
