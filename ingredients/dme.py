@@ -258,13 +258,18 @@ class EyesMonthsDataGenerator(Sequence):
         # return 100
 
     @ingredient.capture
-    def data_generation(self, index_list, evenly_distributed):
+    def data_generation(self, index_list, evenly_distributed, batch_size):
         'Generates data containing batch_size samples'
+        if batch_size is None:
+            batch_size = len(index_list)
+        else:
+            batch_size = self.batch_size
+
         # Initialization        
-        M0 = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
-        M3 = [np.zeros((self.batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
-        Y = np.zeros((self.batch_size, 2))
-        EXTRA = [np.zeros((self.batch_size, self.num_extra))]
+        M0 = [np.zeros((batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
+        M3 = [np.zeros((batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
+        Y = np.zeros((batch_size, 2))
+        EXTRA = [np.zeros((batch_size, self.num_extra))]
 
         dataset_size = len(Y)
         ids = []
@@ -277,7 +282,7 @@ class EyesMonthsDataGenerator(Sequence):
 
             # evenly distributed pos and neg examples
             if evenly_distributed:
-                condition = counter < self.batch_size // 2
+                condition = counter < batch_size // 2
                 # Find list of IDs
                 ids = [self.ids[k] for k in self.train_indexes]
             else: # no distribution, use index_list
@@ -523,9 +528,11 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
 
         # test data
         if test_all:
-            testX, testY = generator.data_generation(test_indexes, False)
+            testX, testY = generator.data_generation(list(range(len(Y))), False, None)
         else:
-            testX, testY = generator.data_generation(range(len(Y)), False)
+            testX, testY = generator.data_generation(test_indexes, False, None)
+
+        print('test length (X/Y): ', len(testX), len(testY))
 
         # Fit the model
         history = model.fit_generator(generator, validation_data=(testX, testY), epochs=epochs, verbose=verbose, callbacks=callbacks_list)

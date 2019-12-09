@@ -53,7 +53,7 @@ def update_cfg():
     verbose = 2
     patience = 40
     evenly_distributed = True
-    test_all = False
+    test_all = True
     extras = ['bcva','cstb','mrtb','hba1c']
 
 @ex.automain
