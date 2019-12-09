@@ -416,7 +416,7 @@ def log_metrics(scores, cvscores, counter, _run):
     log_average_scores([*scores], cvscores)
 
 def log_average_scores(keys, scores):
-    print('### average:', keys, scores)
+    print('### average:')
     tmp = {}
     for key in keys:
         for i, score in enumerate(scores):
@@ -443,6 +443,7 @@ class MetricsHistory(Callback):
                 if metric not in tmp:
                     tmp[metric]=[]
                 tmp[metric].append(log[metric])
+        print('on_train_end: ', tmp['val_ca'])
         avg_scores = {}
         for i,key in enumerate(tmp):
             # print('avg_scores %s:  %.2f%% (+/- %.2f%%) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(scores), np.std(scores), np.max(scores), np.min(scores)))
