@@ -323,7 +323,7 @@ class EyesMonthsDataGenerator(Sequence):
     def set_train_indexes(self, indexes):
         self.train_indexes = indexes
 
-    # return list of all ids and labels for k-fold split
+    # return list of all ids and labels for k-fold split (dmer, dmenr, dmev)
     def get_all_data(self):
         keys_dmer = self.data_source.files['dmer'].keys()
         keys_dmenr = self.data_source.files['dmenr'].keys()
@@ -341,6 +341,12 @@ class EyesMonthsDataGenerator(Sequence):
             self.labels.append(1)
 
         return self.ids, self.labels
+
+    def get_index(self, id):
+        return self.ids.index(id)
+
+    def get_ids(self):
+        return self.ids
 
     # extras
     @ingredient.capture
@@ -447,6 +453,28 @@ class MetricsHistory(Callback):
     def get_scores(self):
         return self.scores
 
+def static_test_data(generator):
+    train_ids = []
+    test_ids = []
+    train_indexes = []
+    test_indexes = []
+
+    # test
+    test_ids = ['A106', 'A108', 'A098', 'A099', 'A103', 'A101', 'A092', 'A097', 'A102', 'A095', 'A100', 'A094', 'A091', 'A096', 'A110', 'A104', 'A107', 'A109', 'A111', 'A093', 'A105']
+    # for file in os.listdir('/home/q1/Python/dl/data/uniklinik_augen/dme-data/dmev_2'):
+    #     test_id = file.split('_')[0]
+    #     if test_id not in test_ids:
+    #         test_ids.append(test_id)
+    for test_id in test_ids:
+        test_indexes.append(generator.get_index(test_id))
+
+    # train
+    train_ids = [i for i in generator.get_ids() if i not in test_ids]
+    for train_id in train_ids:
+        train_indexes.append(generator.get_index(train_id))
+
+    return train_indexes, test_indexes
+
 @ingredient.capture
 def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all):
     id = _run._id
@@ -469,6 +497,8 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     es = EarlyStopping(monitor='val_ca', mode='max', verbose=2, patience=patience)
 
     for train_indexes, test_indexes in kfold.split(X, Y): # return lists of indexes
+        # train_indexes, test_indexes = static_test_data(generator)
+
         print('###### K-Fold split: ', counter)
         print('train indexes: ', train_indexes)
         print('test indexes: ', test_indexes)
