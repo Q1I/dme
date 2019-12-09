@@ -44,14 +44,14 @@ def update_cfg():
     input_size = 128 # 128
     batch_size = 16 # 16
     numpy_source_path = path + 'data/parsed'
-    dropout_rate = 0.5
+    dropout_rate = 0.2
     filters = 32
     epochs = 100
     excel_path = path + 'data/dme-extras.xlsx'
     model_save_path = path + 'data/models/'
     history_save_path = path + 'logs/'
     verbose = 2
-    patience = 40
+    patience = 50
     evenly_distributed = True
     test_all = True
     extras = ['bcva','cstb','mrtb','hba1c']
