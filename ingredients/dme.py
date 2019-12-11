@@ -166,11 +166,7 @@ class EyesNumpySource(object):
         self.files[target] = {}
         self.ids[target] = {}
 
-        path = '%s/%s/%s' % (self.path, target, 'train')
-        for file_index, file in enumerate(os.listdir(path)):
-            file_name = file.split('.')[0]
-            self.files[target][file_name] = path + '/' + file
-        path = '%s/%s/%s' % (self.path, target, 'test')
+        path = '%s/%s' % (self.path, target)
         for file_index, file in enumerate(os.listdir(path)):
             file_name = file.split('.')[0]
             self.files[target][file_name] = path + '/' + file
