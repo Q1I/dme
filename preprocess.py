@@ -33,7 +33,7 @@ def default():
 def update_cfg():
     start_at_x = 510
     cut_y = 124
-    file_path = '/home/q1/Python/dl/data/uniklinik_augen/dme-data'
+    file_path = '/home/q1/Python/dl/data/dme-data'
 
 @ex.automain
 def run():

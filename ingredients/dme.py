@@ -519,7 +519,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
 
         counter += 1
     # print('### average:')
-    log_average_scores([*scores], cvscores)
+    # log_average_scores([*scores], cvscores)
 
     # print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
     # _run.log_scalar("average.test.accuracy", "%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))

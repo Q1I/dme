@@ -49,6 +49,12 @@ def ensure_dir(file_path):
 
 @ingredient.capture
 def parse_file(target, traintest, file, file_path):
+    # A001: w=1058,1054,1044 h=468,460,457 => resize only    
+    # A061: w=948 h=480 => resize only
+    # A065: kleienr als w=378 h=244 => resize bigger only
+    # A038: w=1024 h=885 => resize only
+    # A093: w=1055 h=703 => resize only
+    # A091: h=972 => half
     start_at_x = 510
     cut_y = 124
     if traintest is not None:
@@ -59,11 +65,18 @@ def parse_file(target, traintest, file, file_path):
     img = Image.open(path)
     w, h = img.size
 
-    if w == 498 and h == 472:
+    # print('img size: ', w, h)
+    if w == 498 and h == 472: # why this size? -> doesn't occur
         img.thumbnail((224, 224), Image.ANTIALIAS)
     else:
-        img = img.crop((start_at_x, 0, w, h-cut_y))
-        img = img.resize((498, 472))
+        if ((w == 1055 and h == 703) or (w == 1024 and h == 885) or (w < 380) or (w == 948 and h == 480) or (w == 1058 and h == 468) or (w == 1054 and h == 460) or (w == 1044 and h == 457)): 
+            img = img.resize((498, 472))
+        elif h == 972:
+            img = img.crop((start_at_x, 0, w, 463))
+            img = img.resize((498, 472))
+        else:
+            img = img.crop((start_at_x, 0, w, h-cut_y))
+            img = img.resize((498, 472))
 
     arr = np.array(img).mean(axis=-1)
     return arr
@@ -94,9 +107,8 @@ def to_mat(patients):
 def parse_files(target, files):
     files.sort()
 
-    mats_train = {}
-    mats_test = {}
-
+    mats = {}
+    
     mat = np.zeros((2, 3, 472, 498))
     counter = 0
     prev_id = ''
@@ -111,7 +123,7 @@ def parse_files(target, files):
         # print('p: %s - c: %s' %(prev_id,id))
         
         if prev_id != '' and prev_id != id: # add image
-            add_image(prev_id, mat, mats_train, mats_test)
+            add_image(prev_id, mat, mats)
             mat = np.zeros((2, 3, 472, 498))
         
         # set previous data
@@ -121,31 +133,36 @@ def parse_files(target, files):
 
         # add last image
         if len(files) == counter:
-            add_image(prev_id, mat, mats_train, mats_test)
+            add_image(prev_id, mat, mats)
 
     print('counter: %d' % counter)
-    print('train: %d' % len(mats_train))
-    print('test: %d' % len(mats_test))
+    print('mats: %d' % len(mats))
 
-    return mats_train, mats_test
+    return mats
 
-def add_image(id, mat, mats_train, mats_test):
-    if np.random.random() < 0.8:
-        mats_train[id] = mat
-    else:
-        mats_test[id] = mat
+def add_image(id, mat, mats):
+    # check if all images present
+    mat = fix_missing_image(id, mat)
+    mats[id] = mat
     print('add ' + id)
+
+def fix_missing_image(id, mat):
+    for month in range(2):
+        for index in range(3):
+            if np.count_nonzero(mat[month, index]) == 0:
+                print('%s : [%i, %i] missing ' % (id, month, index))
+                mat[month, index] = mat[month, 0]
+    return mat
 
 @ingredient.capture
 def parse_target(target, file_path):
-    train, test = parse_files(target, os.listdir('%s/%s' % (file_path, target)))
-    save(target, train, 'train')
-    save(target, test, 'test')
+    mats = parse_files(target, os.listdir('%s/%s' % (file_path, target)))
+    save(target, mats)
     
 
-def save(target, data, folder):
+def save(target, data):
     for i, d in data.items():
-        path = 'data/parsed/%s/%s/%s.npy' % (target, folder, i)
+        path = 'data/parsed/%s/%s.npy' % (target, i)
         ensure_dir(path)
         np.save(path, d)
 
@@ -167,10 +184,9 @@ def save(target, data, folder):
             image[w_fr:w_to, h_fr:h_to, 0] = d[mon, exa]
 
         image = array_to_img(image)
-        path = 'data/images/%s/%s/%s.png' % (target, folder, i)
+        path = 'data/images/%s/%s.png' % (target, i)
         ensure_dir(path)
         image.save(path)
-
 
 if __name__ == '__main__':
     start_at_x = 510
