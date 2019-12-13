@@ -35,6 +35,7 @@ def cfg():
     test_all = False # use all data for testing (ignore kfold)
     # extras
     extras = ['bcva','cstb','mrtb','hba1c']
+    validation_ids = ['A063', 'A064', 'A065', 'A066', 'A067', 'A091', 'A092', 'A093', 'A094', 'A095', 'A096', 'A097', 'A098', 'A099', 'A100', 'A101', 'A102', 'A103', 'A104', 'A105', 'A106', 'A107', 'A108', 'A109', 'A110', 'A111']
 
 # skip layer, siehe https://arxiv.org/pdf/1512.03385.pdf, Abbildung 2
 @ingredient.capture
@@ -423,14 +424,14 @@ def log_average_scores(keys, scores):
             tmp[key].append(score[key])
         print('avg %s:  %.2f%% (+/- %.2f) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(tmp[key]) * 100, np.std(tmp[key]) * 100, np.max(tmp[key]) * 100, np.min(tmp[key])* 100))
 
-def static_test_data(generator):
+def static_test_data(generator, validation_ids = []):
     train_ids = []
     test_ids = []
     train_indexes = []
     test_indexes = []
 
     # test
-    test_ids = ['A106', 'A108', 'A098', 'A099', 'A103', 'A101', 'A092', 'A097', 'A102', 'A095', 'A100', 'A094', 'A091', 'A096', 'A110', 'A104', 'A107', 'A109', 'A111', 'A093', 'A105']
+    test_ids = validation_ids
     # for file in os.listdir('/home/q1/Python/dl/data/uniklinik_augen/dme-data/dmev_2'):
     #     test_id = file.split('_')[0]
     #     if test_id not in test_ids:
@@ -446,7 +447,7 @@ def static_test_data(generator):
     return train_indexes, test_indexes
 
 @ingredient.capture
-def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all):
+def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all, validation_ids):
     id = _run._id
     # fix random seed for reproducibility
     seed = 7
@@ -467,7 +468,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     es = EarlyStopping(monitor='val_ca', mode='max', verbose=2, patience=patience)
 
     for train_indexes, test_indexes in kfold.split(X, Y): # return lists of indexes
-        # train_indexes, test_indexes = static_test_data(generator)
+        train_indexes, test_indexes = static_test_data(generator, validation_ids)
 
         print('###### K-Fold split: ', counter)
         print('train indexes: ', train_indexes)
@@ -520,3 +521,134 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     # print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
     # _run.log_scalar("average.test.accuracy", "%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
     _run.log_scalar("#experiement", title)
+
+###############
+# Predictions #
+###############
+@ingredient.capture
+def dme_predict(_run, validation_ids):
+    id = _run._id
+    print("[INFO] start prediction #%s..." % id)
+
+    cvscores = []
+    generator = EyesMonthsDataGenerator()
+    X, Y = generator.get_all_data()
+    
+    # load the trained convolutional neural network and the multi-label
+    print("[INFO] loading network...")
+    # create model
+    model = EyesMonthsClassifier().create_model()
+    model.load_weights('/home/q1/Python/dl/logs/524/weights-improvement-0.79.hdf5')
+
+    # classify the input image then find the indexes of the two class
+    # labels with the *largest* probability
+    print("[INFO] classifying images...")
+    predictions_responder_values = []
+    predictions_non_responder_values = [] 
+    predictions_miss = {'x': [], 'y_r': [], 'y_nr': []}
+    predictions_ids = sorted(generator.get_ids())
+    misses = []
+    
+    for item in validation_ids:
+        imageX, imageY = generator.data_generation([generator.get_index(item)], False, None)
+        prob = model.predict(imageX)
+        prediction, p_score = get_prediction(prob)
+        truth, t_score = get_prediction(imageY)
+        if prediction == truth:
+            validation = '✓'
+        else:
+            misses.append(item)
+            predictions_miss['x'].append(item)
+            predictions_miss['y_r'].append(prob[0,0])
+            predictions_miss['y_nr'].append(prob[0,1])
+            validation = ' '
+        # pos
+        predictions_responder_values.append(prob[0,0])
+        # neg
+        predictions_non_responder_values.append(prob[0,1])
+
+        print('[INFO] Predict %s [ %s ] : %s => %s' % (item, validation, prediction, prob))
+        # idxs = np.argsort(proba)[::-1][:2]
+    
+    # plot
+    N = 4
+    params = plt.gcf()
+    plSize = params.get_size_inches()
+    params.set_size_inches( (plSize[0]*N, plSize[1]) )
+    # r/n-r
+    # plot_predictions('responder', '', predictions_ids, predictions_responder_values, predictions_miss['x'], predictions_miss['y_r'])
+    # plot_predictions('non-responder', '', predictions_ids, predictions_non_responder_values, predictions_miss['x'], predictions_miss['y_nr'])
+    # sorted
+    top_responder = 25
+    top_non_responder = 40
+    list1, list2 = zip(*sorted(zip(predictions_responder_values, predictions_ids), reverse=True))
+    plot_predictions('sorted-responder', 'top %i' % top_responder, list2, list1, predictions_miss['x'], predictions_miss['y_r'])
+    
+    # for i in list2:
+    #     plot_image(i, list1[i], 'n-r' if i in predictions_miss else 'r')
+
+    list1, list2 = zip(*sorted(zip(predictions_non_responder_values, sorted(generator.get_ids())), reverse=True))
+    plot_predictions('sorted-non-responder', 'top %i' % top_non_responder, list2, list1, predictions_miss['x'], predictions_miss['y_nr'])
+    
+    # log
+    print('#### Stats')
+    count_success = len(validation_ids) - len(misses)
+    print('Accuracy: %.2f%%' % (count_success / len(validation_ids)))
+    print('Success: ', count_success)
+    print('Miss: ', len(misses))
+    print(sorted(misses))
+
+def plot_image(i, predictions_array, true_label, img):
+  predictions_array, true_label, img = predictions_array, true_label, img[i]
+  plt.grid(False)
+  plt.xticks([])
+  plt.yticks([])
+
+  plt.imshow(img, cmap=plt.cm.binary)
+
+  predicted_label = np.argmax(predictions_array)
+  if predicted_label == true_label:
+    color = 'blue'
+  else:
+    color = 'red'
+
+  plt.xlabel("{} {:2.0f}% ({})".format(class_names[predicted_label],
+                                100*np.max(predictions_array),
+                                class_names[true_label]),
+                                color=color)
+
+def plot_value_array(i, predictions_array, true_label):
+  predictions_array, true_label = predictions_array, true_label[i]
+  plt.grid(False)
+  plt.xticks(range(10))
+  plt.yticks([])
+  thisplot = plt.bar(range(10), predictions_array, color="#777777")
+  plt.ylim([0, 1])
+  predicted_label = np.argmax(predictions_array)
+
+  thisplot[predicted_label].set_color('red')
+  thisplot[true_label].set_color('blue')
+
+
+def get_prediction(prediction):
+    if prediction[0, 0] > prediction[0, 1]:
+        return 'r', prediction[0, 0]
+    else:
+        return 'n-r', prediction[0, 1]
+
+def plot_predictions(title, label, ids, values, misses_ids, misses_values):
+    plt.xlabel('ID')
+    plt.ylabel('Confidence')
+
+    plt.title('Prediction: %s %s' % (title, label) )
+    plt.plot(ids, values, 'bs')
+    tmp_ids = []
+    tmp_values = []
+    for i, id in enumerate(misses_ids):
+        if id in ids:
+            tmp_ids.append(id)
+            tmp_values.append(misses_values[i])
+    plt.plot(tmp_ids, tmp_values, 'ro')
+    plt.savefig('prediction-%s.png' % title, bbox_inches='tight')
+    # plt.show()
+    plt.clf()
