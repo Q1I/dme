@@ -56,6 +56,7 @@ def update_cfg():
     test_all = False
     extras = ['bcva','cstb','mrtb','hba1c']
     validation_ids = ['A063', 'A064', 'A065', 'A066', 'A067', 'A091', 'A091', 'A092', 'A093', 'A094', 'A095', 'A096', 'A097', 'A098', 'A099', 'A100', 'A101', 'A102', 'A103', 'A104', 'A105', 'A106', 'A107', 'A108', 'A109', 'A110', 'A111']
+    use_validation = False
 
 @ex.automain
 def run(_run, title, dme):
@@ -64,6 +65,7 @@ def run(_run, title, dme):
         title += ' - ' + label
     title += ' - evenly distributed examples' if dme['evenly_distributed'] else ''
     title += ' - use all data for testing' if dme['test_all'] else ''
+    title += ' - use static validation for testing' if dme['use_validation'] else ''
     print('Start experiment: %s' % title)
     dme_run(_run, title)
     print('End experiment: %s' % title)

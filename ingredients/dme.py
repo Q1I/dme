@@ -447,7 +447,7 @@ def static_test_data(generator, validation_ids = []):
     return train_indexes, test_indexes
 
 @ingredient.capture
-def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all, validation_ids):
+def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all, validation_ids, use_validation):
     id = _run._id
     # fix random seed for reproducibility
     seed = 7
@@ -468,7 +468,8 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     es = EarlyStopping(monitor='val_ca', mode='max', verbose=2, patience=patience)
 
     for train_indexes, test_indexes in kfold.split(X, Y): # return lists of indexes
-        train_indexes, test_indexes = static_test_data(generator, validation_ids)
+        if use_validation == True:
+            train_indexes, test_indexes = static_test_data(generator, validation_ids)
 
         print('###### K-Fold split: ', counter)
         print('train indexes: ', train_indexes)
