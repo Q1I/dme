@@ -4,7 +4,7 @@ import os
 import random
 import pandas as pd
 import glob
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedKFold
 import tensorflow.keras.backend as K
 
@@ -539,7 +539,7 @@ def dme_predict(_run, validation_ids):
     print("[INFO] loading network...")
     # create model
     model = EyesMonthsClassifier().create_model()
-    model.load_weights('/home/q1/Python/dl/logs/524/weights-improvement-0.79.hdf5')
+    model.load_weights('/home/q1/Python/dl/dme/673/weights-improvement-0.71.hdf5')
 
     # classify the input image then find the indexes of the two class
     # labels with the *largest* probability
@@ -547,10 +547,10 @@ def dme_predict(_run, validation_ids):
     predictions_responder_values = []
     predictions_non_responder_values = [] 
     predictions_miss = {'x': [], 'y_r': [], 'y_nr': []}
-    predictions_ids = sorted(generator.get_ids())
+    predictions_ids = validation_ids if validation_ids is not None else sorted(generator.get_ids())
     misses = []
     
-    for item in validation_ids:
+    for item in predictions_ids:
         imageX, imageY = generator.data_generation([generator.get_index(item)], False, None)
         prob = model.predict(imageX)
         prediction, p_score = get_prediction(prob)
@@ -577,19 +577,19 @@ def dme_predict(_run, validation_ids):
     plSize = params.get_size_inches()
     params.set_size_inches( (plSize[0]*N, plSize[1]) )
     # r/n-r
-    # plot_predictions('responder', '', predictions_ids, predictions_responder_values, predictions_miss['x'], predictions_miss['y_r'])
-    # plot_predictions('non-responder', '', predictions_ids, predictions_non_responder_values, predictions_miss['x'], predictions_miss['y_nr'])
+    plot_predictions('responder', '', predictions_ids, predictions_responder_values, predictions_miss['x'], predictions_miss['y_r'])
+    plot_predictions('non-responder', '', predictions_ids, predictions_non_responder_values, predictions_miss['x'], predictions_miss['y_nr'])
     # sorted
-    top_responder = 25
-    top_non_responder = 40
+    top_responder = ''
+    top_non_responder = ''
     list1, list2 = zip(*sorted(zip(predictions_responder_values, predictions_ids), reverse=True))
-    plot_predictions('sorted-responder', 'top %i' % top_responder, list2, list1, predictions_miss['x'], predictions_miss['y_r'])
+    plot_predictions('sorted-responder', 'top %s' % top_responder, list2, list1, predictions_miss['x'], predictions_miss['y_r'])
     
     # for i in list2:
     #     plot_image(i, list1[i], 'n-r' if i in predictions_miss else 'r')
 
-    list1, list2 = zip(*sorted(zip(predictions_non_responder_values, sorted(generator.get_ids())), reverse=True))
-    plot_predictions('sorted-non-responder', 'top %i' % top_non_responder, list2, list1, predictions_miss['x'], predictions_miss['y_nr'])
+    list1, list2 = zip(*sorted(zip(predictions_non_responder_values, predictions_ids), reverse=True))
+    plot_predictions('sorted-non-responder', 'top %s' % top_non_responder, list2, list1, predictions_miss['x'], predictions_miss['y_nr'])
     
     # log
     print('#### Stats')

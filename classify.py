@@ -1,69 +1,58 @@
-# import the necessary packages
-from keras.preprocessing.image import img_to_array
-from keras.models import load_model
-import numpy as np
-import argparse
-import imutils
-import pickle
-import cv2
-import os
- 
-# # construct the argument parse and parse the arguments
-# ap = argparse.ArgumentParser()
-# ap.add_argument("-m", "--model", required=True,
-# 	help="path to trained model model")
-# ap.add_argument("-l", "--labelbin", required=True,
-# 	help="path to label binarizer")
-# ap.add_argument("-i", "--image", required=True,
-# 	help="path to input image")
-# args = vars(ap.parse_args())
+from sacred import Experiment
+import json
+from sacred.observers import FileStorageObserver
 
-args['model'] = '/home/q1/Python/dl/dme/logs/152/weights-improvement-0.80.hdf5'
+# from ingredients.parse_months import ingredient as parse_months_ingredient, parse_months_run
+from ingredients.dme import ingredient as dme_ingredient, dme_predict
 
-lti-label classification with KerasPython
-# load the image
-image = cv2.imread(args["image"])
-output = imutils.resize(image, width=400)
- 
-# pre-process the image for classification
-image = cv2.resize(image, (96, 96))
-image = image.astype("float") / 255.0
-image = img_to_array(image)
-image = np.expand_dims(image, axis=0)
+#################
+## ingredients ##
+#################
+# ingredients = [parse_months_ingredient, dme_ingredient]
+ingredients = [dme_ingredient]
 
-# load the image
-image = cv2.imread(args["image"])
-output = imutils.resize(image, width=400)
- 
-# pre-process the image for classification
-image = cv2.resize(image, (96, 96))
-image = image.astype("float") / 255.0
-image = img_to_array(image)
-image = np.expand_dims(image, axis=0)
+ex = Experiment('dme',  ingredients)
 
-# load the trained convolutional neural network and the multi-label
-# binarizer
-print("[INFO] loading network...")
-model = load_model(args["model"])
-mlb = pickle.loads(open(args["labelbin"], "rb").read())
- 
-# classify the input image then find the indexes of the two class
-# labels with the *largest* probability
-print("[INFO] classifying image...")
-proba = model.predict(image)[0]
-idxs = np.argsort(proba)[::-1][:2]
+path = ''
+# path = '/scratch/ws/trng859b-dme/'
 
-# loop over the indexes of the high confidence class labels
-for (i, j) in enumerate(idxs):
-	# build the label and draw the label on the image
-	label = "{}: {:.2f}%".format(mlb.classes_[j], proba[j] * 100)
-	cv2.putText(output, label, (10, (i * 30) + 25), 
-		cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
- 
-# show the probabilities for each of the individual labels
-for (label, p) in zip(mlb.classes_, proba):
-	print("{}: {:.2f}%".format(label, p * 100))
- 
-# show the output image
-cv2.imshow("Output", output)
-cv2.waitKey(0)
+##############
+## observer ##
+##############
+ex.observers.append(FileStorageObserver(path + 'logs'))
+
+############
+## config ##
+############
+ex.add_config('core/config.json')
+
+@ex.config
+def default():
+    """Default Configuration"""
+    title = 'dme'
+
+@dme_ingredient.config
+def update_cfg():
+    """Configuration >> DME"""
+    num_examples = 3
+    input_size = 128 # 128
+    batch_size = 16 # 16
+    numpy_source_path = path + 'data/parsed'
+    dropout_rate = 0.2
+    filters = 32
+    epochs = 100
+    excel_path = path + 'data/dme-extras.xlsx'
+    model_save_path = path + 'data/models/'
+    history_save_path = path + 'logs/'
+    verbose = 2
+    patience = 30
+    evenly_distributed = True
+    test_all = False
+    extras = ['no-extras']
+    validation_ids = ['A063', 'A064', 'A065', 'A066', 'A067', 'A091', 'A091', 'A092', 'A093', 'A094', 'A095', 'A096', 'A097', 'A098', 'A099', 'A100', 'A101', 'A102', 'A103', 'A104', 'A105', 'A106', 'A107', 'A108', 'A109', 'A110', 'A111']
+    use_validation = False
+
+@ex.automain
+def run(_run, title, dme):
+    dme_predict(_run)
+
