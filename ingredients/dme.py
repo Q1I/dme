@@ -460,6 +460,10 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     X, Y = generator.get_all_data()
     counter = 0
     
+    predictions = {} # {eye1: [prediction1, ..], ..}
+    for item_id in sorted(generator.get_ids()):
+        predictions[item_id] = []
+
     # callbacks
     history_id_path = "%s%s/" % (history_save_path, id)
     total_path = history_id_path + 'weights-improvement-{val_ca:.2f}.hdf5'
@@ -507,6 +511,9 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         # evaluate the model
         # model.evaluate(testX, testY, verbose=2)
 
+        # predictions
+        predictions, misses = predict(model, generator, predictions)
+
         log_metrics(history.history, cvscores, counter, _run)
         
         # plot(history, history_save_path, id, counter)
@@ -516,6 +523,8 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         # print("Saved model to disk")
 
         counter += 1
+
+    log_average_predictions(predictions)
     # print('### average:')
     # log_average_scores([*scores], cvscores)
 
@@ -535,15 +544,34 @@ def dme_predict(_run, validation_ids):
     generator = EyesMonthsDataGenerator()
     X, Y = generator.get_all_data()
     
+    predictions = {} # {eye1: [prediction1, ..], ..}
+    for item_id in sorted(generator.get_ids()):
+        predictions[item_id] = []
+
     # load the trained convolutional neural network and the multi-label
     print("[INFO] loading network...")
     # create model
     model = EyesMonthsClassifier().create_model()
-    model.load_weights('/home/q1/Python/dl/dme/673/weights-improvement-0.71.hdf5')
+    model.load_weights('/home/q1/Python/dl/logs/673/weights-improvement-0.71.hdf5')
 
-    # classify the input image then find the indexes of the two class
-    # labels with the *largest* probability
-    print("[INFO] classifying images...")
+    # plot config
+    # N = 4
+    # params = plt.gcf()
+    # plSize = params.get_size_inches()
+    # params.set_size_inches((plSize[0]*N, plSize[1]))
+    predictions, misses = predict(model, generator, predictions)
+
+    # log
+    print('#### Stats')
+    count_success = len(predictions) - len(misses)
+    print('Accuracy: %.2f%%' % (count_success / len(predictions)))
+    print('Success: ', count_success)
+    print('Miss: ', len(misses))
+    print(sorted(misses))
+
+def predict(model, generator, predictions = {}, validation_ids = None, print=False):
+    if print:
+        print("[INFO] classifying images...")
     predictions_responder_values = []
     predictions_non_responder_values = [] 
     predictions_miss = {'x': [], 'y_r': [], 'y_nr': []}
@@ -568,14 +596,18 @@ def dme_predict(_run, validation_ids):
         # neg
         predictions_non_responder_values.append(prob[0,1])
 
-        print('[INFO] Predict %s [ %s ] : %s => %s' % (item, validation, prediction, prob))
+        if print:
+            print('[INFO] Predict %s [ %s ] : %s => %s' % (item, validation, prediction, prob))
         # idxs = np.argsort(proba)[::-1][:2]
-    
+
+        predictions[item].append(prob)
+
     # plot
-    N = 4
-    params = plt.gcf()
-    plSize = params.get_size_inches()
-    params.set_size_inches( (plSize[0]*N, plSize[1]) )
+    # plot(predictions_ids, predictions_responder_values, predictions_non_responder_values, predictions_miss)
+
+    return predictions, misses
+
+def plot(predictions_ids, predictions_responder_values, predictions_non_responder_values, predictions_miss):
     # r/n-r
     plot_predictions('responder', '', predictions_ids, predictions_responder_values, predictions_miss['x'], predictions_miss['y_r'])
     plot_predictions('non-responder', '', predictions_ids, predictions_non_responder_values, predictions_miss['x'], predictions_miss['y_nr'])
@@ -591,14 +623,7 @@ def dme_predict(_run, validation_ids):
     list1, list2 = zip(*sorted(zip(predictions_non_responder_values, predictions_ids), reverse=True))
     plot_predictions('sorted-non-responder', 'top %s' % top_non_responder, list2, list1, predictions_miss['x'], predictions_miss['y_nr'])
     
-    # log
-    print('#### Stats')
-    count_success = len(validation_ids) - len(misses)
-    print('Accuracy: %.2f%%' % (count_success / len(validation_ids)))
-    print('Success: ', count_success)
-    print('Miss: ', len(misses))
-    print(sorted(misses))
-
+    
 def plot_image(i, predictions_array, true_label, img):
   predictions_array, true_label, img = predictions_array, true_label, img[i]
   plt.grid(False)
@@ -653,3 +678,14 @@ def plot_predictions(title, label, ids, values, misses_ids, misses_values):
     plt.savefig('prediction-%s.png' % title, bbox_inches='tight')
     # plt.show()
     plt.clf()
+
+def log_average_predictions(predictions):
+    print('### Predictions', predictions)
+    for i,id in enumerate(predictions):
+        responder_predictions = []
+        non_responder_predictions = []
+        for p in predictions[id]:
+            responder_predictions.append(p[0,0])
+            non_responder_predictions.append(p[0,1])
+        print('%s:  [r] = %.2f%% (+/- %.2f) (max: %.2f%%) (min: %.2f%%) [n-r] = %.2f%% (+/- %.2f) (max: %.2f%%) (min: %.2f%%)'  % (id, np.mean(responder_predictions) * 100, np.std(responder_predictions) * 100, np.min(responder_predictions) * 100, np.max(responder_predictions) * 100, np.mean(non_responder_predictions) * 100, np.std(non_responder_predictions) * 100, np.min(non_responder_predictions) * 100, np.max(non_responder_predictions) * 100))
+

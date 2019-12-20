@@ -13,8 +13,8 @@ ingredients = [dme_ingredient]
 
 ex = Experiment('dme',  ingredients)
 
-# path = ''
-path = '/scratch/ws/trng859b-dme/'
+path = ''
+# path = '/scratch/ws/trng859b-dme/'
 
 ##############
 ## observer ##
@@ -41,12 +41,12 @@ def default():
 def update_cfg():
     """Configuration >> DME"""
     num_examples = 3
-    input_size = 128 # 128
+    input_size = 5 # 128
     batch_size = 16 # 16
     numpy_source_path = path + 'data/parsed'
     dropout_rate = 0.2
     filters = 32
-    epochs = 100
+    epochs = 5
     excel_path = path + 'data/dme-extras.xlsx'
     model_save_path = path + 'data/models/'
     history_save_path = path + 'logs/'
@@ -55,7 +55,7 @@ def update_cfg():
     evenly_distributed = True
     test_all = False
     extras = ['bcva','cstb','mrtb','hba1c']
-    validation_ids = ['A063', 'A064', 'A065', 'A066', 'A067', 'A091', 'A091', 'A092', 'A093', 'A094', 'A095', 'A096', 'A097', 'A098', 'A099', 'A100', 'A101', 'A102', 'A103', 'A104', 'A105', 'A106', 'A107', 'A108', 'A109', 'A110', 'A111']
+    # validation_ids = ['A063', 'A064', 'A065', 'A066', 'A067', 'A091', 'A091', 'A092', 'A093', 'A094', 'A095', 'A096', 'A097', 'A098', 'A099', 'A100', 'A101', 'A102', 'A103', 'A104', 'A105', 'A106', 'A107', 'A108', 'A109', 'A110', 'A111']
     validation_ids = None
     use_validation = False
 
