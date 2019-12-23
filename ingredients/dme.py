@@ -1,4 +1,5 @@
 import cv2
+import csv
 import numpy as np
 import os
 import random
@@ -29,10 +30,12 @@ def cfg():
     excel_path = 'path_to_excel_data_file'
     model_save_path = 'path_to_saved_models'
     history_save_path = 'path_to_history_images'
+    predictions_save_path = 'path_to_generated_predictions'
     verbose = 2
     patience = 10
     evenly_distributed = False
     test_all = False # use all data for testing (ignore kfold)
+    n_splits = 10
     # extras
     extras = ['bcva','cstb','mrtb','hba1c']
     validation_ids = ['A063', 'A064', 'A065', 'A066', 'A067', 'A091', 'A092', 'A093', 'A094', 'A095', 'A096', 'A097', 'A098', 'A099', 'A100', 'A101', 'A102', 'A103', 'A104', 'A105', 'A106', 'A107', 'A108', 'A109', 'A110', 'A111']
@@ -347,8 +350,14 @@ class EyesMonthsDataGenerator(Sequence):
     def get_index(self, id):
         return self.ids.index(id)
 
-    def get_ids(self):
-        return self.ids
+    def get_ids(self, indexes=None):
+        if indexes is not None:
+            ids = []
+            for index in indexes:
+                ids.append(self.ids[index])
+            return ids
+        else:
+            return self.ids
 
     # extras
     @ingredient.capture
@@ -447,14 +456,14 @@ def static_test_data(generator, validation_ids = []):
     return train_indexes, test_indexes
 
 @ingredient.capture
-def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all, validation_ids, use_validation):
+def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all, validation_ids, use_validation, n_splits, predictions_save_path):
     id = _run._id
     # fix random seed for reproducibility
     seed = 7
     np.random.seed(seed)
 
     # define 10-fold cross validation test harness
-    kfold = StratifiedKFold(n_splits=10, shuffle=True, random_state=seed)
+    kfold = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
     cvscores = []
     generator = EyesMonthsDataGenerator()
     X, Y = generator.get_all_data()
@@ -476,8 +485,8 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
             train_indexes, test_indexes = static_test_data(generator, validation_ids)
 
         print('###### K-Fold split: ', counter)
-        print('train indexes: ', train_indexes)
-        print('test indexes: ', test_indexes)
+        print('train indexes: ', generator.get_ids(train_indexes))
+        print('test indexes: ', generator.get_ids(test_indexes))
         
         # checkpoint: save max weight of current fold 
         # tmp_path = history_id_path + 'weights-tmp.hdf5'
@@ -512,7 +521,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         # model.evaluate(testX, testY, verbose=2)
 
         # predictions
-        predictions, misses = predict(model, generator, predictions)
+        predictions, misses, validations = predict(model, generator, predictions)
 
         log_metrics(history.history, cvscores, counter, _run)
         
@@ -524,7 +533,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
 
         counter += 1
 
-    log_average_predictions(predictions)
+    log_average_predictions(predictions, predictions_save_path, validations)
     # print('### average:')
     # log_average_scores([*scores], cvscores)
 
@@ -577,6 +586,7 @@ def predict(model, generator, predictions = {}, validation_ids = None, print=Fal
     predictions_miss = {'x': [], 'y_r': [], 'y_nr': []}
     predictions_ids = validation_ids if validation_ids is not None else sorted(generator.get_ids())
     misses = []
+    validations = {}
     
     for item in predictions_ids:
         imageX, imageY = generator.data_generation([generator.get_index(item)], False, None)
@@ -601,11 +611,12 @@ def predict(model, generator, predictions = {}, validation_ids = None, print=Fal
         # idxs = np.argsort(proba)[::-1][:2]
 
         predictions[item].append(prob)
+        validations[item] = validation
 
     # plot
     # plot(predictions_ids, predictions_responder_values, predictions_non_responder_values, predictions_miss)
 
-    return predictions, misses
+    return predictions, misses, validations
 
 def plot(predictions_ids, predictions_responder_values, predictions_non_responder_values, predictions_miss):
     # r/n-r
@@ -679,13 +690,33 @@ def plot_predictions(title, label, ids, values, misses_ids, misses_values):
     # plt.show()
     plt.clf()
 
-def log_average_predictions(predictions):
-    print('### Predictions', predictions)
+def log_average_predictions(predictions, predictions_save_path, validations = {}):
+    data = []
+    fieldnames = ['id', 'responder prediction (rp)', 'rp-std', 'rp-min', 'rp-max', 'non-responder prediction (nrp)', 'nrp-std', 'nrp-min', 'nrp-max', 'correct']
+    if not os.path.exists(predictions_save_path):
+        os.makedirs(predictions_save_path)
     for i,id in enumerate(predictions):
         responder_predictions = []
         non_responder_predictions = []
         for p in predictions[id]:
             responder_predictions.append(p[0,0])
             non_responder_predictions.append(p[0,1])
-        print('%s:  [r] = %.2f%% (+/- %.2f) (max: %.2f%%) (min: %.2f%%) [n-r] = %.2f%% (+/- %.2f) (max: %.2f%%) (min: %.2f%%)'  % (id, np.mean(responder_predictions) * 100, np.std(responder_predictions) * 100, np.min(responder_predictions) * 100, np.max(responder_predictions) * 100, np.mean(non_responder_predictions) * 100, np.std(non_responder_predictions) * 100, np.min(non_responder_predictions) * 100, np.max(non_responder_predictions) * 100))
+        r_p_mean = round(np.mean(responder_predictions) * 100, 2)
+        r_p_std = round(np.std(responder_predictions) * 100, 2)
+        r_p_min = round(np.min(responder_predictions) * 100, 2)
+        r_p_max = round(np.max(responder_predictions) * 100, 2)
+        nr_p_mean = round(np.mean(non_responder_predictions) * 100, 2)
+        nr_p_std = round(np.std(non_responder_predictions) * 100, 2)
+        nr_p_min = round(np.min(non_responder_predictions) * 100, 2)
+        nr_p_max = round(np.max(non_responder_predictions) * 100, 2)
+        validation = validations[id]
+        print('%s: [%s] => [r] = %.2f%% (+/- %.2f) (min: %.2f%%) (max: %.2f%%) [n-r] = %.2f%% (+/- %.2f) (min: %.2f%%) (max: %.2f%%)'  % (id, validation, r_p_mean, r_p_std, r_p_min, r_p_max, nr_p_mean, nr_p_std, nr_p_min, nr_p_max))
+        data.append({fieldnames[0]: id, fieldnames[1]: r_p_mean, fieldnames[2]: r_p_std, fieldnames[3]: r_p_min, fieldnames[4]: r_p_max, fieldnames[5]: nr_p_mean, fieldnames[6]: nr_p_std, fieldnames[7]: nr_p_min, fieldnames[8]: nr_p_max, fieldnames[9]: validation})
+    # wrtie to csv
+    with open(predictions_save_path + 'predictions.csv', mode='w') as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in data:
+            writer.writerow(row)
+
 
