@@ -46,7 +46,7 @@ def update_cfg():
     numpy_source_path = path + 'data/parsed'
     dropout_rate = 0.2
     filters = 32
-    epochs = 1
+    epochs = 100
     excel_path = path + 'data/dme-extras.xlsx'
     model_save_path = path + 'data/models/'
     history_save_path = path + 'logs/'

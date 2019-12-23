@@ -533,7 +533,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
 
         counter += 1
 
-    log_average_predictions(predictions, predictions_save_path, validations)
+    log_average_predictions(predictions, predictions_save_path, id, validations)
     # print('### average:')
     # log_average_scores([*scores], cvscores)
 
@@ -690,7 +690,7 @@ def plot_predictions(title, label, ids, values, misses_ids, misses_values):
     # plt.show()
     plt.clf()
 
-def log_average_predictions(predictions, predictions_save_path, validations = {}):
+def log_average_predictions(predictions, predictions_save_path, run_id, validations = {}):
     data = []
     fieldnames = ['id', 'responder prediction (rp)', 'rp-std', 'rp-min', 'rp-max', 'non-responder prediction (nrp)', 'nrp-std', 'nrp-min', 'nrp-max', 'correct']
     if not os.path.exists(predictions_save_path):
@@ -713,7 +713,7 @@ def log_average_predictions(predictions, predictions_save_path, validations = {}
         print('%s: [%s] => [r] = %.2f%% (+/- %.2f) (min: %.2f%%) (max: %.2f%%) [n-r] = %.2f%% (+/- %.2f) (min: %.2f%%) (max: %.2f%%)'  % (id, validation, r_p_mean, r_p_std, r_p_min, r_p_max, nr_p_mean, nr_p_std, nr_p_min, nr_p_max))
         data.append({fieldnames[0]: id, fieldnames[1]: r_p_mean, fieldnames[2]: r_p_std, fieldnames[3]: r_p_min, fieldnames[4]: r_p_max, fieldnames[5]: nr_p_mean, fieldnames[6]: nr_p_std, fieldnames[7]: nr_p_min, fieldnames[8]: nr_p_max, fieldnames[9]: validation})
     # wrtie to csv
-    with open(predictions_save_path + 'predictions.csv', mode='w') as csv_file:
+    with open('%spredictions-%s.csv' % (predictions_save_path,run_id), mode='w') as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
         for row in data:
