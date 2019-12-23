@@ -570,13 +570,7 @@ def dme_predict(_run, validation_ids):
     # params.set_size_inches((plSize[0]*N, plSize[1]))
     predictions, misses = predict(model, generator, predictions)
 
-    # log
-    print('#### Stats')
-    count_success = len(predictions) - len(misses)
-    print('Accuracy: %.2f%%' % (count_success / len(predictions)))
-    print('Success: ', count_success)
-    print('Miss: ', len(misses))
-    print(sorted(misses))
+    prediction_summary(predictions, misses)
 
 def predict(model, generator, predictions = {}, validation_ids = None, print=False):
     if print:
@@ -669,9 +663,9 @@ def plot_value_array(i, predictions_array, true_label):
 
 def get_prediction(prediction):
     if prediction[0, 0] > prediction[0, 1]:
-        return 'r', prediction[0, 0]
+        return 'r ', prediction[0, 0]
     else:
-        return 'n-r', prediction[0, 1]
+        return 'nr', prediction[0, 1]
 
 def plot_predictions(title, label, ids, values, misses_ids, misses_values):
     plt.xlabel('ID')
@@ -692,6 +686,8 @@ def plot_predictions(title, label, ids, values, misses_ids, misses_values):
 
 def log_average_predictions(predictions, predictions_save_path, run_id, validations = {}):
     data = []
+    misses = []
+    prob = {}
     fieldnames = ['id', 'responder prediction (rp)', 'rp-std', 'rp-min', 'rp-max', 'non-responder prediction (nrp)', 'nrp-std', 'nrp-min', 'nrp-max', 'correct']
     if not os.path.exists(predictions_save_path):
         os.makedirs(predictions_save_path)
@@ -710,13 +706,29 @@ def log_average_predictions(predictions, predictions_save_path, run_id, validati
         nr_p_min = round(np.min(non_responder_predictions) * 100, 2)
         nr_p_max = round(np.max(non_responder_predictions) * 100, 2)
         validation = validations[id]
-        print('%s: [%s] => [r] = %.2f%% (+/- %.2f) (min: %.2f%%) (max: %.2f%%) [n-r] = %.2f%% (+/- %.2f) (min: %.2f%%) (max: %.2f%%)'  % (id, validation, r_p_mean, r_p_std, r_p_min, r_p_max, nr_p_mean, nr_p_std, nr_p_min, nr_p_max))
+        # get prediction of mean
+        prob[0, 0] = r_p_mean
+        prob[0, 1] = nr_p_mean
+        prediction, p_score = get_prediction(prob)
+        if validation == ' ':
+            misses.append(id)
+        print('%s => %s [%s] : [r] = %.2f%% (+/- %.2f) (min: %.2f%%) (max: %.2f%%) [n-r] = %.2f%% (+/- %.2f) (min: %.2f%%) (max: %.2f%%)'  % (id, prediction, validation, r_p_mean, r_p_std, r_p_min, r_p_max, nr_p_mean, nr_p_std, nr_p_min, nr_p_max))
         data.append({fieldnames[0]: id, fieldnames[1]: r_p_mean, fieldnames[2]: r_p_std, fieldnames[3]: r_p_min, fieldnames[4]: r_p_max, fieldnames[5]: nr_p_mean, fieldnames[6]: nr_p_std, fieldnames[7]: nr_p_min, fieldnames[8]: nr_p_max, fieldnames[9]: validation})
-    # wrtie to csv
+    # stats
+    predictions_summary(predictions, misses)
+    # write to csv
     with open('%spredictions-%s.csv' % (predictions_save_path,run_id), mode='w') as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
         for row in data:
             writer.writerow(row)
 
+def predictions_summary(predictions, misses):
+    # log
+    print('#### Stats')
+    count_success = len(predictions) - len(misses)
+    print('Accuracy: %.2f%%' % (count_success / len(predictions)))
+    print('Success: ', count_success)
+    print('Miss: ', len(misses))
+    print(sorted(misses))
 
