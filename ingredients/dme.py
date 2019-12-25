@@ -6,7 +6,7 @@ import random
 import pandas as pd
 import glob
 # import matplotlib.pyplot as plt
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, RepeatedStratifiedKFold
 import tensorflow.keras.backend as K
 
 from tensorflow.keras.layers import *
@@ -463,7 +463,8 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     np.random.seed(seed)
 
     # define 10-fold cross validation test harness
-    kfold = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    # kfold = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    kfold = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=3)
     cvscores = []
     generator = EyesMonthsDataGenerator()
     X, Y = generator.get_all_data()
