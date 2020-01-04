@@ -4,10 +4,10 @@
 #SBATCH --mincpus=1         
 #SBATCH --ntasks=1         
 #SBATCH --cpus-per-task=8
-#SBATCH --time=23:00:00
+#SBATCH --time=26:00:00
 #SBATCH -J "dme-cstb"
 #SBATCH --output=/scratch/ws/trng859b-dme/experiment-master-%j-cstb-even.out
-#SBATCH --mem=16192
+#SBATCH --mem=19192
 
 
 OUTFILE=""
