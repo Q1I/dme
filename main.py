@@ -55,7 +55,8 @@ def update_cfg():
     patience = 30
     evenly_distributed = True
     test_all = False
-    extras = ['bcva','cstb','mrtb','hba1c']
+    extras = ['bcva','cstb','mrtb','hba1c','prp', 'lens', 'pdr', 'gender', 'avegf']
+    num_extra = len(extras) + 6 #(prp_yes, prp_no, lens_phakic, lens_pseudophakic, pdr_npdr, pdr_pdr, gender_male, gender_female, avegf_ranibizumab, avegf_aflibercept, avegf_bevacizumab)
     n_splits = 4
     # validation_ids = ['A063', 'A064', 'A065', 'A066', 'A067', 'A091', 'A091', 'A092', 'A093', 'A094', 'A095', 'A096', 'A097', 'A098', 'A099', 'A100', 'A101', 'A102', 'A103', 'A104', 'A105', 'A106', 'A107', 'A108', 'A109', 'A110', 'A111']
     validation_ids = None

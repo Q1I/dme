@@ -37,7 +37,8 @@ def cfg():
     test_all = False # use all data for testing (ignore kfold)
     n_splits = 10
     # extras
-    extras = ['bcva','cstb','mrtb','hba1c']
+    extras = ['bcva','cstb','mrtb','hba1c','prp', 'lens', 'pdr', 'gender', 'avegf']
+    num_extra = len(extras) + 6 #(prp_yes, prp_no, lens_phakic, lens_pseudophakic, pdr_npdr, pdr_pdr, gender_male, gender_female, avegf_ranibizumab, avegf_aflibercept, avegf_bevacizumab)
     validation_ids = ['A063', 'A064', 'A065', 'A066', 'A067', 'A091', 'A092', 'A093', 'A094', 'A095', 'A096', 'A097', 'A098', 'A099', 'A100', 'A101', 'A102', 'A103', 'A104', 'A105', 'A106', 'A107', 'A108', 'A109', 'A110', 'A111']
 
 # skip layer, siehe https://arxiv.org/pdf/1512.03385.pdf, Abbildung 2
@@ -75,10 +76,10 @@ def down(x, dropout_rate, filters):
 # - die Encodings pro Zeitpunkt werden konkateniert und in den classifier gegeben
 class EyesMonthsClassifier(object) :
     @ingredient.capture
-    def __init__(self, num_examples, input_size, extras):
+    def __init__(self, num_examples, input_size, extras, num_extra):
         self.num_examples = num_examples
         self.input_size = input_size
-        self.num_extra = len(extras)
+        self.num_extra = num_extra
 
     def create_model(self):
         month0 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
@@ -224,7 +225,7 @@ class EyesNumpySource(object):
 
 class EyesMonthsDataGenerator(Sequence):
     @ingredient.capture
-    def __init__(self, num_examples, input_size, batch_size, extras, excel_path):
+    def __init__(self, num_examples, input_size, batch_size, extras, num_extra, excel_path):
         self.batch_size = batch_size
         self.num_examples = num_examples
         self.input_size = input_size
@@ -232,7 +233,7 @@ class EyesMonthsDataGenerator(Sequence):
         self.extras_csv = pd.read_excel(excel_path)
         self.shuffle = True
         self.extras = extras
-        self.num_extra = len(extras)
+        self.num_extra = num_extra
 
         self.ids = [] # list of all ids
         self.labels = [] # list of labels
@@ -318,11 +319,56 @@ class EyesMonthsDataGenerator(Sequence):
                     extras.append(self._mrtb(id))
                 if extra == 'hba1c':
                     extras.append(self._hba1c(id))
+                if extra == 'prp':
+                    prp = self._prp(id)
+                    if prp == 1: # 1-yes, 2-no
+                        extras.append(1)
+                        extras.append(0)
+                    else:
+                        extras.append(0)
+                        extras.append(1)
+                if extra == 'lens': # 1-phakic, 2-pseudophakic
+                    lens = self._lens(id)
+                    if lens == 1: 
+                        extras.append(1)
+                        extras.append(0)
+                    else:
+                        extras.append(0)
+                        extras.append(1)
+                if extra == 'pdr': # 1-NPDR, 2-PDR
+                    pdr = self._pdr(id)
+                    if pdr == 1: 
+                        extras.append(1)
+                        extras.append(0)
+                    else:
+                        extras.append(0)
+                        extras.append(1)
+                if extra == 'gender': # 1-male, 2-female
+                    gender = self._gender(id)
+                    if gender == 1: 
+                        extras.append(1)
+                        extras.append(0)
+                    else:
+                        extras.append(0)
+                        extras.append(1)
+                if extra == 'avegf': # 1-ranibizumab, 2-aflibercept, 3-bevacizumab
+                    avegf = self._avegf(id)
+                    if avegf == 1: 
+                        extras.append(1)
+                        extras.append(0)
+                        extras.append(0)
+                    elif avegf == 2:
+                        extras.append(0)
+                        extras.append(1)
+                        extras.append(0)
+                    else:
+                        extras.append(0)
+                        extras.append(0)
+                        extras.append(1)
                 if extra == 'no-extras':
                     extras.append(0)
 
             EXTRA[0][counter] = extras
-
         return M0 + M3 + EXTRA, Y
 
     def set_train_indexes(self, indexes):
@@ -375,7 +421,27 @@ class EyesMonthsDataGenerator(Sequence):
     @ingredient.capture
     def _hba1c(self, id):
         return self.get_extra_value('HbA1c at DME diagnosis, (%)', id) / 100
-        
+    # Status post PRP (1-yes, 2-no)
+    @ingredient.capture
+    def _prp(self, id):
+        return self.get_extra_value('Status post PRP (1-yes, 2-no)', id)
+    # Lens status (1-phakic, 2- pseudophakic)
+    @ingredient.capture
+    def _lens(self, id):
+        return self.get_extra_value('Lens status (1-phakic, 2- pseudophakic)', id)   
+    # Diabetic retinopathy (1-NPDR, 2-PDR)
+    @ingredient.capture
+    def _pdr(self, id):
+        return self.get_extra_value('Diabetic retinopathy (1-NPDR, 2-PDR)', id)
+    # Gender (1-male, 2-female)
+    @ingredient.capture
+    def _gender(self, id):
+        return self.get_extra_value('Gender (1-male, 2-female)', id)
+    # Anti-VEGF drug intially injected (1-ranibizumab, 2-aflibercept, 3-bevacizumab)
+    @ingredient.capture
+    def _avegf(self, id):
+        return self.get_extra_value('Anti-VEGF drug intially injected (1-ranibizumab, 2-aflibercept, 3-bevacizumab)', id)
+
     def get_extra_value(self, column_name, id):
         value = self.extras_csv.loc[self.extras_csv['ID'] == id][column_name].values[0]
         if np.isnan(value):
