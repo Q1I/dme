@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -A p_scads            
 #SBATCH --nodes=1            
-#SBATCH --mincpus=8         
+#SBATCH --mincpus=1         
 #SBATCH --ntasks=1         
 #SBATCH --cpus-per-task=1
 #SBATCH -J "dme-t-no_extras"
