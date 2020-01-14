@@ -12,6 +12,6 @@
 
 OUTFILE=""
 
-srun python3 main.py with dme.evenly_distributed=True "dme.extras=['hba1c']"
+srun python3 main.py with dme.evenly_distributed=True "dme.extras=['hba1c']" dme.num_extra=1
 
 exit 0

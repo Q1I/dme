@@ -12,6 +12,6 @@
 
 OUTFILE=""
 
-srun python3 main.py with dme.evenly_distributed=True "dme.extras=['bcva']"
+srun python3 main.py with dme.evenly_distributed=True "dme.extras=['bcva']" dme.num_extra=1
 
 exit 0
