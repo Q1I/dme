@@ -37,7 +37,7 @@ def cfg():
     test_all = False # use all data for testing (ignore kfold)
     n_splits = 10
     # extras
-    extras = ['bcva','cstb','mrtb','hba1c','prp', 'lens', 'pdr', 'gender', 'avegf']
+    extras = ['bcva','cstb','mrtb','hba1c','prp', 'lens', 'pdr', 'gender', 'avegf', 'age', 'duration']
     num_extra = len(extras) + 6 #(prp_yes, prp_no, lens_phakic, lens_pseudophakic, pdr_npdr, pdr_pdr, gender_male, gender_female, avegf_ranibizumab, avegf_aflibercept, avegf_bevacizumab)
     validation_ids = ['A063', 'A064', 'A065', 'A066', 'A067', 'A091', 'A092', 'A093', 'A094', 'A095', 'A096', 'A097', 'A098', 'A099', 'A100', 'A101', 'A102', 'A103', 'A104', 'A105', 'A106', 'A107', 'A108', 'A109', 'A110', 'A111']
 
@@ -319,6 +319,10 @@ class EyesMonthsDataGenerator(Sequence):
                     extras.append(self._mrtb(id))
                 if extra == 'hba1c':
                     extras.append(self._hba1c(id))
+                if extra == 'age':
+                    extras.append(self._age(id))
+                if extra == 'duration':
+                    extras.append(self._duration(id))
                 if extra == 'prp':
                     prp = self._prp(id)
                     if prp == 1: # 1-yes, 2-no
@@ -441,6 +445,14 @@ class EyesMonthsDataGenerator(Sequence):
     @ingredient.capture
     def _avegf(self, id):
         return self.get_extra_value('Anti-VEGF drug intially injected (1-ranibizumab, 2-aflibercept, 3-bevacizumab)', id)
+    # Age at DME diagnosis (years)
+    @ingredient.capture
+    def _age(self, id):
+        return self.get_extra_value('Age at DME diagnosis (years)', id)
+    # duration of DM (months)
+    @ingredient.capture
+    def _duration(self, id):
+        return self.get_extra_value('duration of DM (months)', id) / 492
 
     def get_extra_value(self, column_name, id):
         value = self.extras_csv.loc[self.extras_csv['ID'] == id][column_name].values[0]
@@ -529,8 +541,8 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     np.random.seed(seed)
 
     # define 10-fold cross validation test harness
-    # kfold = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
-    kfold = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=3)
+    kfold = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    # kfold = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=3)
     cvscores = []
     generator = EyesMonthsDataGenerator()
     X, Y = generator.get_all_data()
