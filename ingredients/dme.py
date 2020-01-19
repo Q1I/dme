@@ -12,7 +12,7 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.layers import *
 from tensorflow.keras.models import Sequential, Model, load_model
 from tensorflow.keras.utils import *
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, Callback
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, Callback, ReduceLROnPlateau
 
 from sacred import Ingredient
 
@@ -39,7 +39,7 @@ def cfg():
     # extras
     extras = ['bcva','cstb','mrtb','hba1c','prp', 'lens', 'pdr', 'gender', 'avegf', 'age', 'duration']
     num_extra = len(extras) + 6 #(prp_yes, prp_no, lens_phakic, lens_pseudophakic, pdr_npdr, pdr_pdr, gender_male, gender_female, avegf_ranibizumab, avegf_aflibercept, avegf_bevacizumab)
-    validation_ids = ['A063', 'A064', 'A065', 'A066', 'A067', 'A091', 'A092', 'A093', 'A094', 'A095', 'A096', 'A097', 'A098', 'A099', 'A100', 'A101', 'A102', 'A103', 'A104', 'A105', 'A106', 'A107', 'A108', 'A109', 'A110', 'A111']
+    validation_ids = ['A063', 'A064', 'A065', 'A066', 'A067', 'A090', 'A091', 'A092', 'A093', 'A094', 'A095', 'A096', 'A097', 'A098', 'A099', 'A100', 'A101', 'A102', 'A103', 'A104', 'A105', 'A106', 'A107', 'A108', 'A109', 'A110', 'A111']
 
 # skip layer, siehe https://arxiv.org/pdf/1512.03385.pdf, Abbildung 2
 @ingredient.capture
@@ -509,7 +509,10 @@ def log_average_scores(keys, scores):
             if key not in tmp:
                 tmp[key]=[]
             tmp[key].append(score[key])
-        print('avg %s:  %.2f%% (+/- %.2f) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(tmp[key]) * 100, np.std(tmp[key]) * 100, np.max(tmp[key]) * 100, np.min(tmp[key])* 100))
+        if 'ca' in key:
+            print('avg %s:  %.2f%% (+/- %.2f) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(tmp[key]) * 100, np.std(tmp[key]) * 100, np.max(tmp[key]) * 100, np.min(tmp[key])* 100))
+        else:
+            print('avg %s:  %.2f (+/- %.2f) (max: %.2f) (min: %.2f)'  % (key, np.mean(tmp[key]), np.std(tmp[key]), np.max(tmp[key]), np.min(tmp[key])))
 
 def static_test_data(generator, validation_ids = []):
     train_ids = []
@@ -541,8 +544,8 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     np.random.seed(seed)
 
     # define 10-fold cross validation test harness
-    kfold = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
-    # kfold = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=3)
+    # kfold = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    kfold = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=2)
     cvscores = []
     generator = EyesMonthsDataGenerator()
     X, Y = generator.get_all_data()
@@ -558,7 +561,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     # total_path = history_id_path + 'weights-improvement-{epoch:02d}-{val_ca:.2f}.hdf5'
     checkpoint = ModelCheckpoint(total_path, monitor='val_ca', verbose=0, save_best_only=True, mode='max')
     es = EarlyStopping(monitor='val_ca', mode='max', verbose=2, patience=patience)
-
+    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=10, min_lr=0.001)
     for train_indexes, test_indexes in kfold.split(X, Y): # return lists of indexes
         if use_validation == True:
             train_indexes, test_indexes = static_test_data(generator, validation_ids)
@@ -572,7 +575,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         # tmp_checkpoint = ModelCheckpoint(tmp_path, monitor='val_ca', verbose=0, save_best_only=True, save_weights_only=True, mode='max')
         
         # callback
-        callbacks_list = [checkpoint, es]
+        callbacks_list = [checkpoint, es, reduce_lr]
 
         # set train data indexes for generator
         generator.set_train_indexes(train_indexes)
