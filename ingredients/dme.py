@@ -582,7 +582,6 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     np.random.seed(seed)
 
     seed = random.randint(1, 100)
-    seed = 43
     print('Seed:', seed)
 
     n_repeats = 2
