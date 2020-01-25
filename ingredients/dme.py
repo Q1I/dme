@@ -501,18 +501,56 @@ def log_metrics(history, cvscores, epoch, _run):
     cvscores.append(avg_metric)
     log_average_scores([*history], cvscores)
 
-def log_average_scores(keys, scores):
+def log_average_scores(keys, scores, id = None, write_to_file = False, prediction = None):
     print('### average:')
     tmp = {}
+    logs = {}
     for key in keys:
         for i, score in enumerate(scores):
             if key not in tmp:
                 tmp[key]=[]
             tmp[key].append(score[key])
+        mean = np.mean(tmp[key])
+        std = np.std(tmp[key])
+        max = np.max(tmp[key])
+        min = np.min(tmp[key])
+
+        if key not in logs:
+            logs[key] = {}    
+        logs[key]['val'] = mean
+        logs[key]['std'] = std
+        logs[key]['max'] = max
+        logs[key]['min'] = min
+
         if 'ca' in key:
-            print('avg %s:  %.2f%% (+/- %.2f) (max: %.2f%%) (min: %.2f%%)'  % (key, np.mean(tmp[key]) * 100, np.std(tmp[key]) * 100, np.max(tmp[key]) * 100, np.min(tmp[key])* 100))
+            print('avg %s:  %.2f%% (+/- %.2f) (max: %.2f%%) (min: %.2f%%)'  % (key, mean * 100, std * 100, max * 100, min * 100))
         else:
-            print('avg %s:  %.2f (+/- %.2f) (max: %.2f) (min: %.2f)'  % (key, np.mean(tmp[key]), np.std(tmp[key]), np.max(tmp[key]), np.min(tmp[key])))
+            print('avg %s:  %.2f (+/- %.2f) (max: %.2f) (min: %.2f)'  % (key, mean, std, max, min))
+    
+    if write_to_file:
+        write_average_scores(logs, id, prediction)
+
+@ingredient.capture
+def write_average_scores(logs, id, prediction, history_save_path, extras):
+    stats_file = '%sstatistics.csv' % (history_save_path)
+    with open(stats_file, mode='a') as csv_file:
+        fieldnames = ['id', 'val_ca', 'val_ca_std', 'val_ca_min', 'val_ca_max', 'val_loss', 'val_loss_std', 'val_loss_min', 'val_loss_max', 'loss', 'loss_std', 'loss_min', 'loss_max', 'ca', 'ca_std', 'ca_min', 'ca_max', 'prediction', 'extras']
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        if os.stat(stats_file).st_size == 0:
+            writer.writeheader()
+        row = {} 
+        row['id'] = id
+        row['prediction'] = prediction
+        seperator = ';'
+        row['extras'] = seperator.join(sorted(extras))
+        for key in logs:
+            if 'lr' in key:
+                continue
+            row[key] = logs[key]['val'] 
+            row[key + '_std'] = logs[key]['std']
+            row[key + '_min'] = logs[key]['min']
+            row[key + '_max'] = logs[key]['max']
+        writer.writerow(row)
 
 def static_test_data(generator, validation_ids = []):
     train_ids = []
@@ -543,9 +581,15 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     seed = 7
     np.random.seed(seed)
 
+    seed = random.randint(1, 100)
+    seed = 43
+    print('Seed:', seed)
+
+    n_repeats = 2
+
     # define 10-fold cross validation test harness
     # kfold = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
-    kfold = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=2)
+    kfold = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=n_repeats, random_state=seed)
     cvscores = []
     generator = EyesMonthsDataGenerator()
     X, Y = generator.get_all_data()
@@ -562,6 +606,8 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     checkpoint = ModelCheckpoint(total_path, monitor='val_ca', verbose=0, save_best_only=True, mode='max')
     es = EarlyStopping(monitor='val_ca', mode='max', verbose=2, patience=patience)
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=10, min_lr=0.001)
+    
+    history = None
     for train_indexes, test_indexes in kfold.split(X, Y): # return lists of indexes
         if use_validation == True:
             train_indexes, test_indexes = static_test_data(generator, validation_ids)
@@ -569,7 +615,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
         print('###### K-Fold split: ', counter)
         print('train indexes: ', generator.get_ids(train_indexes))
         print('test indexes: ', generator.get_ids(test_indexes))
-        
+
         # checkpoint: save max weight of current fold 
         # tmp_path = history_id_path + 'weights-tmp.hdf5'
         # tmp_checkpoint = ModelCheckpoint(tmp_path, monitor='val_ca', verbose=0, save_best_only=True, save_weights_only=True, mode='max')
@@ -615,10 +661,10 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
 
         counter += 1
 
-    log_average_predictions(predictions, predictions_save_path, id, validations)
-    # print('### average:')
-    # log_average_scores([*scores], cvscores)
+    prediction_accuracy = log_average_predictions(predictions, predictions_save_path, id, validations)
 
+    log_average_scores([*(history.history)], cvscores, id, True, prediction_accuracy)
+    
     # print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
     # _run.log_scalar("average.test.accuracy", "%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
     _run.log_scalar("#experiement", title)
@@ -796,21 +842,25 @@ def log_average_predictions(predictions, predictions_save_path, run_id, validati
             misses.append(id)
         print('%s => %s [%s] : [r] = %.2f%% (+/- %.2f) (min: %.2f%%) (max: %.2f%%) [n-r] = %.2f%% (+/- %.2f) (min: %.2f%%) (max: %.2f%%)'  % (id, prediction, validation, r_p_mean, r_p_std, r_p_min, r_p_max, nr_p_mean, nr_p_std, nr_p_min, nr_p_max))
         data.append({fieldnames[0]: id, fieldnames[1]: r_p_mean, fieldnames[2]: r_p_std, fieldnames[3]: r_p_min, fieldnames[4]: r_p_max, fieldnames[5]: nr_p_mean, fieldnames[6]: nr_p_std, fieldnames[7]: nr_p_min, fieldnames[8]: nr_p_max, fieldnames[9]: validation})
-    # stats
-    predictions_summary(predictions, misses)
     # write to csv
     with open('%spredictions-%s.csv' % (predictions_save_path,run_id), mode='w') as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
         for row in data:
             writer.writerow(row)
+    # stats
+    prediction_accuracy = predictions_summary(predictions, misses)
+
+    return prediction_accuracy
 
 def predictions_summary(predictions, misses):
     # log
     print('#### Stats')
     count_success = len(predictions) - len(misses)
-    print('Accuracy: %.2f%%' % (count_success / len(predictions)))
+    acc = count_success / len(predictions)
+    print('Accuracy: %.2f%%' % acc)
     print('Success: ', count_success)
     print('Miss: ', len(misses))
     print(sorted(misses))
+    return acc
 
