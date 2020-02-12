@@ -9,7 +9,7 @@
 #SBATCH --output=/scratch/ws/trng859b-dme/experiment-mv-%j-hba1c.out
 #SBATCH --gres=gpu:1           # use 1 GPU per node (i.e. use one GPUper task)
 #SBATCH -p gpu2
-#SBATCH --mem=14192
+#SBATCH --mem=24192
 
 
 OUTFILE=""
