@@ -16,8 +16,8 @@ ingredients = [missing_values_ingredient, extras_ingredient, logging_ingredient]
 
 ex = Experiment('dme',  ingredients)
 
-path = ''
-# path = '/scratch/ws/trng859b-dme/'
+# path = ''
+path = '/scratch/ws/trng859b-dme/'
 
 ##############
 ## observer ##
@@ -47,7 +47,7 @@ def default():
 def update_cfg():
     """Configuration >> DME"""
     num_examples = 3
-    input_size = 10 # 128
+    input_size = 128 # 128
     batch_size = 16 # 16
     numpy_source_path = path + 'data/parsed'
     dropout_rate = 0.2

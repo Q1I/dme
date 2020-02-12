@@ -14,6 +14,6 @@
 
 OUTFILE=""
 
-srun python3 missing_values_run.py with missing_values.evenly_distributed=False "missing_values.extras==['hba1c']" missing_values.num_extra=1
+srun python3 missing_values_run.py with missing_values.evenly_distributed=False "missing_values.extras=['hba1c']" missing_values.num_extra=1
 
 exit 0

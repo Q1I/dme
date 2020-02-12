@@ -130,7 +130,9 @@ class EyesMonthsClassifier(object) :
         meta_reconstructer = self.create_meta_reconstructer(classifier_input_size + self.num_extra)
         
         reconstructed = meta_reconstructer(enc)
-        loss = Lambda(lambda t: (t[0]-t[1])**2)([meta, reconstructed])
+        reconstructed_sig = Activation('sigmoid')(reconstructed)
+        meta_sig = Activation('sigmoid')(meta)
+        loss = Lambda(lambda t: (t[0]-t[1])**2)([meta_sig, reconstructed_sig])
         loss = multiply([loss, meta_msk])
         loss = Lambda(lambda x: K.mean(x, axis=-1))(loss)
         loss = Reshape((1,))(loss)
@@ -562,40 +564,12 @@ def missing_values_run(_run, title, epochs, model_save_path, history_save_path, 
 ###############
 # Predictions #
 ###############
-@ingredient.capture
-def dme_predict(_run, validation_ids):
-    id = _run._id
-    print("[INFO] start prediction #%s..." % id)
-
-    cvscores = []
-    generator = EyesMonthsDataGenerator()
-    X, Y = generator.get_all_data()
-    
-    predictions = {} # {eye1: [prediction1, ..], ..}
-    for item_id in sorted(generator.get_ids()):
-        predictions[item_id] = []
-
-    # load the trained convolutional neural network and the multi-label
-    print("[INFO] loading network...")
-    # create model
-    model = EyesMonthsClassifier().create_model()
-    model.load_weights('/home/q1/Python/dl/logs/673/weights-improvement-0.71.hdf5')
-
-    # plot config
-    # N = 4
-    # params = plt.gcf()
-    # plSize = params.get_size_inches()
-    # params.set_size_inches((plSize[0]*N, plSize[1]))
-    predictions, misses = predict(model, generator, predictions)
-
-    predictions_summary(predictions, misses)
-
 def predict(model, generator, predictions = {}, validation_ids = None, shouldPrint=False):
-    if print:
+    if shouldPrint:
         print("[INFO] classifying images...")
-    predictions_responder_values = []
-    predictions_non_responder_values = [] 
-    predictions_miss = {'x': [], 'y_r': [], 'y_nr': []}
+    # predictions_responder_values = []
+    # predictions_non_responder_values = [] 
+    # predictions_miss = {'x': [], 'y_r': [], 'y_nr': []}
     predictions_ids = validation_ids if validation_ids is not None else sorted(generator.get_ids())
     misses = []
     validations = {}
@@ -624,7 +598,7 @@ def predict(model, generator, predictions = {}, validation_ids = None, shouldPri
         # predictions_responder_values.append(prob[0,0])
         # # neg
         # predictions_non_responder_values.append(prob[0,1])
-        print('PRED', item, prediction, prob[0,0], extras.get_extras(item));
+        print('PRED %s: %.3f' % (item, prediction), extras.get_extras_orig(item), 'encoded: %.3f' % prob[0,0], extras.get_extras(item));
         if shouldPrint:
             print('[INFO] Predict %s [ %s ] : %s => %s' % (item, validation, prediction, prob))
         # idxs = np.argsort(proba)[::-1][:2]
