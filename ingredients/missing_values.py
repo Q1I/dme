@@ -95,10 +95,6 @@ class EyesMonthsClassifier(object) :
     def create_model(self): 
         month0 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         month3 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
-
-        # hier würde man dann zusätzliche Informationen erstellen:
-        # extra = Input((self.num_extra,))
-
         encoder = self._create_encoder()
 
         if self.num_examples > 1:
@@ -118,9 +114,6 @@ class EyesMonthsClassifier(object) :
 
         enc = concatenate([enc0, enc3])
 
-        # Extra-Informationen werden dann hier konkateniert:
-        # enc = concatenate([enc, extra])
-
         meta = Input((self.num_extra,), name='meta')
         meta_msk = Input((self.num_extra,), name='meta_msk')
         meta2 = Dropout(0.25)(meta)
@@ -136,20 +129,14 @@ class EyesMonthsClassifier(object) :
         loss = multiply([loss, meta_msk])
         loss = Lambda(lambda x: K.mean(x, axis=-1))(loss)
         loss = Reshape((1,))(loss)
-        # loss = Lambda(lambda x: K.mean(x))(loss)
-
-        # decoder = self._create_decoder()
-        # out = decoder(loss)
-        # loss = Dense(1, activation='softmax')(loss)
-
-        # classifier = self._create_classifier(self.num_extra)
-        # out = classifier(loss)
-
+        
         model = Model(month0 + month3 + [meta] + [meta_msk], loss, name='eye_sum_model')
-        # model.compile(loss='mse', optimizer='nadam', metrics=[ca]) # ca
+
+        predict_model = Model(month0 + month3 + [meta] + [meta_msk], [reconstructed], name='predict_model')
+
         model.compile(loss='mse', optimizer='nadam')
 
-        return model
+        return model, predict_model
 
     def create_meta_reconstructer(self, vector_size):
         inp = Input((vector_size,))
@@ -180,38 +167,6 @@ class EyesMonthsClassifier(object) :
         var = Dense(256, activation='sigmoid')(var)
 
         return Model(inp1, var, name='eye_sum_encoder')
-
-
-    def _create_decoder(self):
-        inp1 = Input((self.input_size, self.input_size, 1))
-        inp2 = Lambda(lambda x: 1-x)(inp1)
-        inp = concatenate([inp1, inp2])
-        
-        var = Dropout(0.1)(inp)
-
-        while var.shape[1] > 2:
-            var = down(var)
-
-        # print(var.shape)
-        var = Flatten()(var)
-
-        var = Dropout(0.1)(var)
-        var = Dense(256, activation='sigmoid')(var)
-
-        return Model(inp1, var, name='eye_sum_encoder')
-
-    def _create_classifier(self, input_size):   
-        inp = Input((input_size,))
-        var = BatchNormalization()(inp)
-        var = Dropout(0.1)(var)
-
-        for size in [128, 64, 32]:
-            var = Dropout(0.1)(var)
-            var = Dense(size, activation='sigmoid')(var)
-            var = BatchNormalization()(var)
-
-        var = Dense(2, activation='softmax')(var)
-        return Model(inp, var, name='eye_sum_classifier')
 
 class EyesMonthsDataGenerator(Sequence):
     @ingredient.capture 
@@ -302,9 +257,9 @@ class EyesMonthsDataGenerator(Sequence):
                 M3[i][counter, :, :, 0] = p3[i]
             
             # extras
-            extras_val = self.extras_processor.get_extras(id)
-            EXTRA[counter] = extras_val[0,0]
-            EXTRA_MSK[counter] = extras_val[0,1]
+            extras_val, extras_msk = self.extras_processor.get_extras(id)
+            EXTRA[counter] = extras_val
+            EXTRA_MSK[counter] = extras_msk
             if no_missing_value == True:
                 EXTRA_MSK[counter] = 1
             
@@ -469,14 +424,22 @@ def missing_values_run(_run, title, epochs, model_save_path, history_save_path, 
     seed = random.randint(1, 100)
     print('Seed:', seed)
 
-    # define 10-fold cross validation test harness
-    # kfold = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
-    # kfold = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=n_repeats, random_state=seed)
     cvscores = []
     generator = EyesMonthsDataGenerator()
     X, Y = generator.get_all_data()
     counter = 0
     
+    extras_processor = generator.extras_processor
+    extra_column = 'HbA1c at DME diagnosis, (%)'
+    avg = extras_processor.get_column_average(extra_column)
+    std = extras_processor.get_column_std(extra_column)
+    print('AVG', avg);
+    print('STD', std);
+    # print(extras.get_extras('A001', False));
+    # print(extras.get_extras('A002', False));
+    # print(extras.get_extras('A003', False));
+    # quit()
+
     predictions = {} # {eye1: [prediction1, ..], ..}
     for item_id in sorted(generator.get_ids()):
         predictions[item_id] = []
@@ -493,19 +456,8 @@ def missing_values_run(_run, title, epochs, model_save_path, history_save_path, 
 
     trainX, trainY = generator.data_generation(list(range(len(X))), False, None)
 
-    # for train_indexes, test_indexes in kfold.split(X, Y): # return lists of indexes
     for run in range(n_repeats): 
-        # if use_validation == True:
-        #     train_indexes, test_indexes = static_test_data(generator, validation_ids)
 
-        print('###### K-Fold split: ', counter)
-        # print('train indexes: ', generator.get_ids(train_indexes))
-        # print('test indexes: ', generator.get_ids(test_indexes))
-
-        # checkpoint: save max weight of current fold 
-        # tmp_path = history_id_path + 'weights-tmp.hdf5'
-        # tmp_checkpoint = ModelCheckpoint(tmp_path, monitor='val_ca', verbose=0, save_best_only=True, save_weights_only=True, mode='max')
-        
         # callback
         callbacks_list = []
 
@@ -513,35 +465,13 @@ def missing_values_run(_run, title, epochs, model_save_path, history_save_path, 
         generator.set_train_indexes(len(X))
 
         # create model
-        model = EyesMonthsClassifier().create_model()
+        model, predict_model = EyesMonthsClassifier().create_model()
         print(model.summary())
 
-        # plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
-
-        # test data
-        # if test_all:
-        #     testX, testY = generator.data_generation(list(range(len(Y))), False, None)
-        # else:
-        #     testX, testY = generator.data_generation(test_indexes, False, None)
-
-        # print('test length (X/Y): ', len(testX), len(testY))
-
-        # Fit the model
-        # history = model.fit_generator(generator, validation_data=(testX, testX), epochs=epochs, verbose=verbose, callbacks=callbacks_list)
-        # tX, tY = generator.data_generation(train_indexes, False, None)
-        # print("tx",len(trainX))
-        # print("ty",len(trainY))
-        # tX = np.reshape(tX, (len(tX), 10, 10, 1))  
         history = model.fit(trainX, trainY, validation_data=None, epochs=epochs, verbose=verbose, callbacks=callbacks_list)
 
-        # load model with best val_ca
-        # model.load_weights(tmp_path)
-
-        # evaluate the model
-        # model.evaluate(testX, testY, verbose=2)
-
         # predictions
-        predictions, misses, validations = predict(model, generator, predictions)
+        predictions, misses, validations = predict(predict_model, generator, predictions)
 
         # log_metrics(history.history, cvscores, counter, _run)
         
@@ -574,31 +504,23 @@ def predict(model, generator, predictions = {}, validation_ids = None, shouldPri
     misses = []
     validations = {}
     
-    extras = generator.extras_processor
+    mv_index = generator.extras.index('hba1c')
+
+    extras_tool = generator.extras_processor
     extra_column = 'HbA1c at DME diagnosis, (%)'
-    avg = extras.get_column_average(extra_column)
-    std = extras.get_column_std(extra_column)
+    avg = extras_tool.get_column_average(extra_column)
+    std = extras_tool.get_column_std(extra_column)
     print('AVG', avg);
     print('STD', std);
 
     for item in predictions_ids:
         imageX, imageY = generator.data_generation([generator.get_index(item)], False, None, True)
         prob = model.predict(imageX)
-        prediction = get_missing_values_prediction(prob[0,0], avg, std)
-        # truth, t_score = get_prediction(imageY)
-        # if prediction == truth:
-        #     validation = '✓'
-        # else:
-        #     misses.append(item)
-        #     predictions_miss['x'].append(item)
-        #     predictions_miss['y_r'].append(prob[0,0])
-        #     predictions_miss['y_nr'].append(prob[0,1])
-        #     validation = ' '
-        # # pos
-        # predictions_responder_values.append(prob[0,0])
-        # # neg
-        # predictions_non_responder_values.append(prob[0,1])
-        print('PRED %s: %.3f' % (item, prediction), extras.get_extras_orig(item), 'encoded: %.3f' % prob[0,0], extras.get_extras(item));
+        prediction = get_missing_values_prediction(prob[0,mv_index], avg, std)
+
+        extras_encoded, msk = extras_tool.get_extras(item)
+        extras_decoded, msk = extras_tool.get_extras(item, False)
+        print('PRED %s: %.3f' % (item, prediction), extras_decoded[mv_index], 'encoded: %.3f' % prob[0,mv_index], extras_encoded[mv_index], 'masked ', msk);
         if shouldPrint:
             print('[INFO] Predict %s [ %s ] : %s => %s' % (item, validation, prediction, prob))
         # idxs = np.argsort(proba)[::-1][:2]

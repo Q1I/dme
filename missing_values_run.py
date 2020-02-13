@@ -29,9 +29,21 @@ ex.observers.append(FileStorageObserver(path + 'logs'))
 ############
 ex.add_config('core/config.json')
 
-extras = ['bcva','cstb','mrtb','hba1c','prp', 'lens', 'pdr', 'gender', 'avegf', 'age', 'duration']
-num_extra = len(extras) + 6 #(prp_yes, prp_no, lens_phakic, lens_pseudophakic, pdr_npdr, pdr_pdr, gender_male, gender_female, avegf_ranibizumab, avegf_aflibercept, avegf_bevacizumab)
-    
+# extras = ['bcva','cstb','mrtb','hba1c','prp', 'lens', 'pdr', 'gender', 'avegf', 'age', 'duration']
+# num_extra = len(extras) + 6 #(prp_yes, prp_no, lens_phakic, lens_pseudophakic, pdr_npdr, pdr_pdr, gender_male, gender_female, avegf_ranibizumab, avegf_aflibercept, avegf_bevacizumab)
+extras = [
+'age',
+'bcva',
+'cstb',
+'mrtb',
+'hba1c',
+'prp_yes', 'prp_no',
+'lens_phakic', 'lens_pseudophakic',
+'pdr_n', 'pdr_p',
+'gender_male', 'gender_female',
+'avegf_ranibizumab', 'avegf_aflibercept', 'avegf_bevacizumab']
+num_extra = len(extras)
+
 @ex.config
 def default():
     """Default Configuration"""
@@ -52,7 +64,7 @@ def update_cfg():
     numpy_source_path = path + 'data/parsed'
     dropout_rate = 0.2
     filters = 32
-    epochs = 100
+    epochs = 200
     excel_path = path + 'data/dme-extras.xlsx'
     model_save_path = path + 'data/models/'
     history_save_path = path + 'logs/'

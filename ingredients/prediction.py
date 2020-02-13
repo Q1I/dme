@@ -10,7 +10,7 @@ def get_prediction(prediction):
         return 'nr', prediction[0, 1]
 
 def get_missing_values_prediction(value, avg, std):
-    return (value + avg) * std
+    return value * std + avg 
 
 @ingredient.capture
 def predictions_summary(predictions, misses):
