@@ -246,7 +246,7 @@ class EyesMonthsDataGenerator(Sequence):
                 target = 'dmenr'
             
             # sample
-            p0, p3 = self.data_source.get_example(target, id, evenly_distributed, ids)
+            p0, p3, p_id = self.data_source.get_example(target, id, evenly_distributed, ids)
 
             indexes = list(range(self.num_examples))
             random.shuffle(indexes)
@@ -257,7 +257,7 @@ class EyesMonthsDataGenerator(Sequence):
                 M3[i][counter, :, :, 0] = p3[i]
             
             # extras
-            extras_val, extras_msk = self.extras_processor.get_extras(id)
+            extras_val, extras_msk = self.extras_processor.get_extras(p_id)
             EXTRA[counter] = extras_val
             EXTRA_MSK[counter] = extras_msk
             if no_missing_value == True:
@@ -350,24 +350,28 @@ class EyesNumpySource(object):
         if evenly_distributed:
             # random example
             if target == 'dmer':
-                example = self.get_pos_example(ids)
+                example, example_id = self.get_pos_example(ids)
             else:
-                example = self.get_neg_example(ids)
-            return self.parse_example(target, example)
+                example, example_id = self.get_neg_example(ids)
+            example_m0, example_m3 = self.parse_example(target, example)
+            return example_m0, example_m3, example_id
         else:
             # example by id
-            return self.parse_example(target, self._load(target, id))
+            example_m0, example_m3 = self.parse_example(target, self._load(target, id))
+            return  example_m0, example_m3, id
         # return parse_example(self.examples[target][id])
 
     def get_pos_example(self, training_ids):
         all_positives = list(self.files['dmer'].keys())
         positives = [x for x in training_ids if x in all_positives]
-        return self._load('dmer', random.choice(positives))
+        id = random.choice(positives)
+        return self._load('dmer', id), id
 
     def get_neg_example(self, training_ids):
         all_negatives = list(self.files['dmenr'].keys())
         negatives = [x for x in training_ids if x in all_negatives]
-        return self._load('dmenr', random.choice(negatives))
+        id = random.choice(negatives)
+        return self._load('dmenr', id), id
 
     @ingredient.capture
     def parse_example(self, target, example):
@@ -430,11 +434,11 @@ def missing_values_run(_run, title, epochs, model_save_path, history_save_path, 
     counter = 0
     
     extras_processor = generator.extras_processor
-    extra_column = 'HbA1c at DME diagnosis, (%)'
-    avg = extras_processor.get_column_average(extra_column)
-    std = extras_processor.get_column_std(extra_column)
-    print('AVG', avg);
-    print('STD', std);
+    # extra_column = 'HbA1c at DME diagnosis, (%)'
+    # avg = extras_processor.get_column_average(extra_column)
+    # std = extras_processor.get_column_std(extra_column)
+    # print('AVG', avg);
+    # print('STD', std);
     # print(extras.get_extras('A001', False));
     # print(extras.get_extras('A002', False));
     # print(extras.get_extras('A003', False));
@@ -504,10 +508,11 @@ def predict(model, generator, predictions = {}, validation_ids = None, shouldPri
     misses = []
     validations = {}
     
-    mv_index = generator.extras.index('hba1c')
+    mv_index = generator.extras.index('bcva_delta_m0_m12')
 
     extras_tool = generator.extras_processor
-    extra_column = 'HbA1c at DME diagnosis, (%)'
+    # extra_column = 'HbA1c at DME diagnosis, (%)'
+    extra_column = 'Visual acuity change from Month 0 to Month 12 (letters)'
     avg = extras_tool.get_column_average(extra_column)
     std = extras_tool.get_column_std(extra_column)
     print('AVG', avg);
@@ -520,7 +525,7 @@ def predict(model, generator, predictions = {}, validation_ids = None, shouldPri
 
         extras_encoded, msk = extras_tool.get_extras(item)
         extras_decoded, msk = extras_tool.get_extras(item, False)
-        print('PRED %s: %.3f' % (item, prediction), extras_decoded[mv_index], 'encoded: %.3f' % prob[0,mv_index], extras_encoded[mv_index], 'masked ', msk);
+        print('PRED %s: %.3f' % (item, prediction), extras_decoded[mv_index], 'encoded: %.3f' % prob[0,mv_index], extras_encoded[mv_index], 'masked ', msk)
         if shouldPrint:
             print('[INFO] Predict %s [ %s ] : %s => %s' % (item, validation, prediction, prob))
         # idxs = np.argsort(proba)[::-1][:2]

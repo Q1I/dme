@@ -25,8 +25,8 @@ class Extras():
     def _bcva_m12(self, id):
         return self.get_extra_value('Visual acuity Month 12 (logMAR)', id)
     @ingredient.capture
-    def _bcva_delta_m0_m12(self, id):
-        return self.get_extra_value('Visual acuity change from Month 0 to Month 12 (letters)', id)
+    def _bcva_delta_m0_m12(self, id, encode = True):
+        return self.get_extra_value('Visual acuity change from Month 0 to Month 12 (letters)', id, encode)
     # Central subfield Thickness baseline (μm)
     @ingredient.capture
     def _cstb(self, id, encode = True):
@@ -115,8 +115,8 @@ class Extras():
             #     extras[i] = self._bcva_m3(id))
             # if extra == 'bcva_m12':
             #     extras[i] = self._bcva_m12(id))
-            # if extra == 'bcva_delta_m0_m12':
-            #     extras[i] = self._bcva_delta_m0_m12(id))
+            if extra == 'bcva_delta_m0_m12':
+                extras[i], extras_msk[i] = self._bcva_delta_m0_m12(id, encode)
             if extra == 'cstb':
                 extras[i], extras_msk[i] = self._cstb(id, encode)
             if extra == 'mrtb':
