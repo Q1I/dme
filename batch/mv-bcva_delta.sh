@@ -11,5 +11,5 @@
 
 OUTFILE=""
 
-srun python3 missing_values_run.py
+srun python3 missing_values_run.py with "missing_values.extras=['bcva_delta_m0_m12']" missing_values.num_extra=1
 exit 0
