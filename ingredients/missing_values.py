@@ -483,7 +483,7 @@ def missing_values_run(_run, title, epochs, model_save_path, history_save_path, 
         # plot(history, history_save_path, id, counter)
         
         # save model
-        # model.save('%sdme-%s-%i.h5' % (model_save_path, id, counter))
+        model.save('%smv-%s-%i.h5' % (model_save_path, id, counter))
         # print("Saved model to disk")
 
         counter += 1
