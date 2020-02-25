@@ -123,9 +123,10 @@ class EyesMonthsClassifier(object) :
         meta_reconstructer = self.create_meta_reconstructer(classifier_input_size + self.num_extra)
         
         reconstructed = meta_reconstructer(enc)
-        reconstructed_sig = Activation('sigmoid')(reconstructed)
-        meta_sig = Activation('sigmoid')(meta)
-        loss = Lambda(lambda t: (t[0]-t[1])**2)([meta_sig, reconstructed_sig])
+        # reconstructed_sig = Activation('sigmoid')(reconstructed)
+        # meta_sig = Activation('sigmoid')(meta)
+        # loss = Lambda(lambda t: (t[0]-t[1])**2)([meta_sig, reconstructed_sig])
+        loss = Lambda(lambda t: (t[0]-t[1])**2)([meta, reconstructed])
         loss = multiply([loss, meta_msk])
         loss = Lambda(lambda x: K.mean(x, axis=-1))(loss)
         loss = Reshape((1,))(loss)
