@@ -11,5 +11,5 @@
 
 OUTFILE=""
 
-srun python3 missing_values_run.py with "missing_values.extras=['bcva_delta_m0_m12', bcva', 'age', 'avegf_ranibizumab', 'avegf_aflibercept', 'avegf_bevacizumab']"
+srun python3 missing_values_run.py with "missing_values.extras=['bcva_delta_m0_m12', 'bcva', 'age', 'avegf_ranibizumab', 'avegf_aflibercept', 'avegf_bevacizumab']"
 exit 0

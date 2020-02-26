@@ -61,7 +61,7 @@ def update_cfg():
     """Configuration >> DME"""
     num_examples = 3
     input_size = 128 # 128
-    batch_size = 16 # 16
+    batch_size = 8 # 16
     numpy_source_path = path + 'data/parsed'
     dropout_rate = 0.2
     filters = 32

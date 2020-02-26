@@ -524,7 +524,7 @@ def predict(model, generator, predictions = {}, validation_ids = None, shouldPri
         prob = model.predict(imageX)
         prediction = get_missing_values_prediction(prob[0,mv_index], avg, std)
 
-        extras_encoded, msk = extras_tool.get_extras(item)
+        # extras_encoded, msk = extras_tool.get_extras(item)
         extras_decoded, msk = extras_tool.get_extras(item, False)
         print('PRED %s: %.3f' % (item, prediction), extras_decoded[mv_index], 'encoded: %.3f' % prob[0,mv_index], extras_encoded[mv_index], 'masked ', msk)
         if shouldPrint:
