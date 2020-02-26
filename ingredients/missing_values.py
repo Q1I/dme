@@ -451,7 +451,7 @@ def missing_values_run(_run, title, epochs, model_save_path, history_save_path, 
 
     # callbacks
     history_id_path = "%s%s/" % (history_save_path, id)
-    total_path = history_id_path + 'weights-improvement-{val_ca:.2f}.hdf5'
+    total_path = history_id_path + 'weights-improvement-{loss:.2f}.hdf5'
     # total_path = history_id_path + 'weights-improvement-{epoch:02d}-{val_ca:.2f}.hdf5'
     checkpoint = ModelCheckpoint(total_path, monitor='val_ca', verbose=0, save_best_only=True, mode='max')
     es = EarlyStopping(monitor='val_ca', mode='max', verbose=2, patience=patience)
@@ -483,7 +483,7 @@ def missing_values_run(_run, title, epochs, model_save_path, history_save_path, 
         # plot(history, history_save_path, id, counter)
         
         # save model
-        model.save('%smv-%s-%i.h5' % (model_save_path, id, counter))
+        model.save('%smv-%s-%i.h5' % (total_path, id, counter))
         # print("Saved model to disk")
 
         counter += 1
