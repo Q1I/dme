@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --time=4:00:00
 #SBATCH -J "dme-cstb"
-#SBATCH --output=/scratch/ws/trng859b-dme/experiment-master-%j-cstb-even.out
+#SBATCH --output=/scratch/ws/1/trng859b-dme/experiment-master-%j-cstb-even.out
 #SBATCH --gres=gpu:1           # use 1 GPU per node (i.e. use one GPUper task)
 #SBATCH -p gpu2
 #SBATCH --mem=14192

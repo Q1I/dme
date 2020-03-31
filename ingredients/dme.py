@@ -5,7 +5,6 @@ import os
 import random
 import pandas as pd
 import glob
-# import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedKFold, RepeatedStratifiedKFold
 import tensorflow.keras.backend as K
 
@@ -13,6 +12,11 @@ from tensorflow.keras.layers import *
 from tensorflow.keras.models import Sequential, Model, load_model
 from tensorflow.keras.utils import *
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, Callback, ReduceLROnPlateau
+
+from ingredients.extras import Extras
+from ingredients.logging import log_average_scores, log_average_predictions
+from ingredients.prediction import get_prediction, predictions_summary
+from ingredients.plotting import plot
 
 from sacred import Ingredient
 
@@ -36,10 +40,18 @@ def cfg():
     evenly_distributed = False
     test_all = False # use all data for testing (ignore kfold)
     n_splits = 10
+    n_repeats = 2
     # extras
     extras = ['bcva','cstb','mrtb','hba1c','prp', 'lens', 'pdr', 'gender', 'avegf', 'age', 'duration']
     num_extra = len(extras) + 6 #(prp_yes, prp_no, lens_phakic, lens_pseudophakic, pdr_npdr, pdr_pdr, gender_male, gender_female, avegf_ranibizumab, avegf_aflibercept, avegf_bevacizumab)
     validation_ids = ['A063', 'A064', 'A065', 'A066', 'A067', 'A090', 'A091', 'A092', 'A093', 'A094', 'A095', 'A096', 'A097', 'A098', 'A099', 'A100', 'A101', 'A102', 'A103', 'A104', 'A105', 'A106', 'A107', 'A108', 'A109', 'A110', 'A111']
+    metrics = 'ca'
+
+def block_dense(var, size):
+    var = Dropout(0.1)(var)
+    var = Dense(size, activation='sigmoid')(var)
+    var = BatchNormalization()(var)
+    return var
 
 # skip layer, siehe https://arxiv.org/pdf/1512.03385.pdf, Abbildung 2
 @ingredient.capture
@@ -76,12 +88,13 @@ def down(x, dropout_rate, filters):
 # - die Encodings pro Zeitpunkt werden konkateniert und in den classifier gegeben
 class EyesMonthsClassifier(object) :
     @ingredient.capture
-    def __init__(self, num_examples, input_size, extras, num_extra):
+    def __init__(self, num_examples, input_size, extras, num_extra, metrics):
         self.num_examples = num_examples
         self.input_size = input_size
         self.num_extra = num_extra
+        self.metrics = metrics
 
-    def create_model(self):
+    def create_model(self): 
         month0 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
         month3 = [Input((self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
 
@@ -136,7 +149,7 @@ class EyesMonthsClassifier(object) :
 
         return Model(inp1, var, name='eye_sum_encoder')
 
-    def _create_classifier(self, input_size):
+    def _create_classifier(self, input_size):   
         inp = Input((input_size,))
         var = BatchNormalization()(inp)
         var = Dropout(0.1)(var)
@@ -149,6 +162,134 @@ class EyesMonthsClassifier(object) :
         var = Dense(2, activation='softmax')(var)
         return Model(inp, var, name='eye_sum_classifier')
 
+class EyesMonthsDataGenerator(Sequence):
+    @ingredient.capture 
+    def __init__(self, num_examples, input_size, batch_size, extras, num_extra, excel_path):
+        self.batch_size = batch_size
+        self.num_examples = num_examples
+        self.input_size = input_size
+        self.data_source = EyesNumpySource() # TODO
+        self.shuffle = True
+        self.extras = extras
+        self.num_extra = num_extra
+
+        self.ids = [] # list of all ids
+        self.labels = [] # list of labels
+
+        # extras processor for reading and procesing extras excel
+        self.extras_processor = Extras(excel_path, extras, num_extra)
+
+    # Gets batch at position index.
+    def __getitem__(self, index):
+        'Generate one batch of data'
+        # Generate indexes of the batch
+        indexes = self.train_indexes[index*self.batch_size:(index+1)*self.batch_size]
+
+        # Find list of IDs
+        # ids = [self.ids[k] for k in indexes]
+
+        # Generate data
+        X, y = self.data_generation(indexes)
+
+        return X, y
+
+    # Number of batch in the Sequence
+    def __len__(self):
+        'Denotes the number of batches per epoch'
+        return int(np.floor(len(self.ids) / self.batch_size))
+        # return 100
+
+    @ingredient.capture
+    def data_generation(self, index_list, evenly_distributed, batch_size, image_only = False):
+        'Generates data containing batch_size samples'
+        if batch_size is None:
+            batch_size = len(index_list)
+        else:
+            batch_size = self.batch_size
+
+        # Initialization        
+        M0 = [np.zeros((batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
+        M3 = [np.zeros((batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
+        Y = np.zeros((batch_size, 2))
+        EXTRA = np.zeros((batch_size, self.num_extra, ))
+        
+        dataset_size = len(Y)
+        ids = []
+        # Generate data
+        for counter, idx in enumerate(index_list):
+            if counter >= dataset_size:
+                break
+
+            id = self.ids[idx]
+
+            # evenly distributed pos and neg examples
+            if evenly_distributed:
+                condition = counter < batch_size // 2
+                # Find list of IDs
+                ids = [self.ids[k] for k in self.train_indexes]
+            else: # no distribution, use index_list
+                condition = self.labels[idx] == 0
+
+            # label
+            if condition:
+                Y[counter, 0] = 1
+                target = 'dmer'
+            else:
+                Y[counter, 1] = 1
+                target = 'dmenr'
+            
+            # sample
+            p0, p3, p_id = self.data_source.get_example(target, id, evenly_distributed, ids)
+
+            indexes = list(range(self.num_examples))
+            random.shuffle(indexes)
+            indexes = indexes[:self.num_examples]
+
+            for i in indexes:
+                M0[i][counter, :, :, 0] = p0[i]
+                M3[i][counter, :, :, 0] = p3[i]
+            
+            # extras
+            extras_val, extras_msk = self.extras_processor.get_extras(p_id)
+            EXTRA[counter] = extras_val
+
+        if image_only:
+            return M0 + M3, Y    
+        return M0 + M3 + [EXTRA], Y
+
+    def set_train_indexes(self, indexes):
+        self.train_indexes = indexes
+
+    # return list of all ids and labels for k-fold split (dmer, dmenr, dmev)
+    def get_all_data(self):
+        keys_dmer = self.data_source.files['dmer'].keys()
+        keys_dmenr = self.data_source.files['dmenr'].keys()
+        # random.shuffle(keys_dmer)
+        # random.shuffle(keys_dmenr)
+
+        total_images = len(keys_dmer) + len(keys_dmenr)
+        print('Number of total eyes: %i' % total_images)
+
+        for id in keys_dmer:
+            self.ids.append(id)
+            self.labels.append(0)
+        for id in keys_dmenr:
+            self.ids.append(id)
+            self.labels.append(1)
+
+        return self.ids, self.labels
+
+    def get_index(self, id):
+        return self.ids.index(id)
+
+    def get_ids(self, indexes=None):
+        if indexes is not None:
+            ids = []
+            for index in indexes:
+                ids.append(self.ids[index])
+            return ids
+        else:
+            return self.ids
 
 # Klasse, welche die Numpy-Matrizen lädt
 # kann insofern erweitert werden, dass nicht alle Daten sofort geladen werden:
@@ -200,290 +341,35 @@ class EyesNumpySource(object):
         if evenly_distributed:
             # random example
             if target == 'dmer':
-                example = self.get_pos_example(ids)
+                example, example_id = self.get_pos_example(ids)
             else:
-                example = self.get_neg_example(ids)
-            return self.parse_example(target, example)
+                example, example_id = self.get_neg_example(ids)
+            example_m0, example_m3 = self.parse_example(target, example)
+            return example_m0, example_m3, example_id
         else:
             # example by id
-            return self.parse_example(target, self._load(target, id))
+            example_m0, example_m3 = self.parse_example(target, self._load(target, id))
+            return  example_m0, example_m3, id
         # return parse_example(self.examples[target][id])
 
     def get_pos_example(self, training_ids):
         all_positives = list(self.files['dmer'].keys())
         positives = [x for x in training_ids if x in all_positives]
-        return self._load('dmer', random.choice(positives))
+        id = random.choice(positives)
+        return self._load('dmer', id), id
 
     def get_neg_example(self, training_ids):
         all_negatives = list(self.files['dmenr'].keys())
         negatives = [x for x in training_ids if x in all_negatives]
-        return self._load('dmenr', random.choice(negatives))
+        id = random.choice(negatives)
+        return self._load('dmenr', id), id
 
     @ingredient.capture
     def parse_example(self, target, example):
         return example[0], example[1]
 
-class EyesMonthsDataGenerator(Sequence):
-    @ingredient.capture
-    def __init__(self, num_examples, input_size, batch_size, extras, num_extra, excel_path):
-        self.batch_size = batch_size
-        self.num_examples = num_examples
-        self.input_size = input_size
-        self.data_source = EyesNumpySource() # TODO
-        self.extras_csv = pd.read_excel(excel_path)
-        self.shuffle = True
-        self.extras = extras
-        self.num_extra = num_extra
-
-        self.ids = [] # list of all ids
-        self.labels = [] # list of labels
-
-    # Gets batch at position index.
-    def __getitem__(self, index):
-        'Generate one batch of data'
-        # Generate indexes of the batch
-        indexes = self.train_indexes[index*self.batch_size:(index+1)*self.batch_size]
-
-        # Find list of IDs
-        # ids = [self.ids[k] for k in indexes]
-
-        # Generate data
-        X, y = self.data_generation(indexes)
-
-        return X, y
-
-    # Number of batch in the Sequence
-    def __len__(self):
-        'Denotes the number of batches per epoch'
-        return int(np.floor(len(self.ids) / self.batch_size))
-        # return 100
-
-    @ingredient.capture
-    def data_generation(self, index_list, evenly_distributed, batch_size):
-        'Generates data containing batch_size samples'
-        if batch_size is None:
-            batch_size = len(index_list)
-        else:
-            batch_size = self.batch_size
-
-        # Initialization        
-        M0 = [np.zeros((batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
-        M3 = [np.zeros((batch_size, self.input_size, self.input_size, 1)) for _ in range(self.num_examples)]
-        Y = np.zeros((batch_size, 2))
-        EXTRA = [np.zeros((batch_size, self.num_extra))]
-
-        dataset_size = len(Y)
-        ids = []
-        # Generate data
-        for counter, idx in enumerate(index_list):
-            if counter >= dataset_size:
-                break
-
-            id = self.ids[idx]
-
-            # evenly distributed pos and neg examples
-            if evenly_distributed:
-                condition = counter < batch_size // 2
-                # Find list of IDs
-                ids = [self.ids[k] for k in self.train_indexes]
-            else: # no distribution, use index_list
-                condition = self.labels[idx] == 0
-
-            # label
-            if condition:
-                Y[counter, 0] = 1
-                target = 'dmer'
-            else:
-                Y[counter, 1] = 1
-                target = 'dmenr'
-            
-            # sample
-            p0, p3 = self.data_source.get_example(target, id, evenly_distributed, ids)
-
-            indexes = list(range(self.num_examples))
-            random.shuffle(indexes)
-            indexes = indexes[:self.num_examples]
-
-            for i in indexes:
-                M0[i][counter, :, :, 0] = p0[i]
-                M3[i][counter, :, :, 0] = p3[i]
-            
-            # extras
-            extras = []
-            for i, extra in enumerate(self.extras):
-                if extra == 'bcva':
-                    extras.append(self._bcva(id))
-                if extra == 'cstb':
-                    extras.append(self._cstb(id))
-                if extra == 'mrtb':
-                    extras.append(self._mrtb(id))
-                if extra == 'hba1c':
-                    extras.append(self._hba1c(id))
-                if extra == 'age':
-                    extras.append(self._age(id))
-                if extra == 'duration':
-                    extras.append(self._duration(id))
-                if extra == 'prp':
-                    prp = self._prp(id)
-                    if prp == 1: # 1-yes, 2-no
-                        extras.append(1)
-                        extras.append(0)
-                    else:
-                        extras.append(0)
-                        extras.append(1)
-                if extra == 'lens': # 1-phakic, 2-pseudophakic
-                    lens = self._lens(id)
-                    if lens == 1: 
-                        extras.append(1)
-                        extras.append(0)
-                    else:
-                        extras.append(0)
-                        extras.append(1)
-                if extra == 'pdr': # 1-NPDR, 2-PDR
-                    pdr = self._pdr(id)
-                    if pdr == 1: 
-                        extras.append(1)
-                        extras.append(0)
-                    else:
-                        extras.append(0)
-                        extras.append(1)
-                if extra == 'gender': # 1-male, 2-female
-                    gender = self._gender(id)
-                    if gender == 1: 
-                        extras.append(1)
-                        extras.append(0)
-                    else:
-                        extras.append(0)
-                        extras.append(1)
-                if extra == 'avegf': # 1-ranibizumab, 2-aflibercept, 3-bevacizumab
-                    avegf = self._avegf(id)
-                    if avegf == 1: 
-                        extras.append(1)
-                        extras.append(0)
-                        extras.append(0)
-                    elif avegf == 2:
-                        extras.append(0)
-                        extras.append(1)
-                        extras.append(0)
-                    else:
-                        extras.append(0)
-                        extras.append(0)
-                        extras.append(1)
-                if extra == 'no-extras':
-                    extras.append(0)
-
-            EXTRA[0][counter] = extras
-        return M0 + M3 + EXTRA, Y
-
-    def set_train_indexes(self, indexes):
-        self.train_indexes = indexes
-
-    # return list of all ids and labels for k-fold split (dmer, dmenr, dmev)
-    def get_all_data(self):
-        keys_dmer = self.data_source.files['dmer'].keys()
-        keys_dmenr = self.data_source.files['dmenr'].keys()
-        # random.shuffle(keys_dmer)
-        # random.shuffle(keys_dmenr)
-
-        total_images = len(keys_dmer) + len(keys_dmenr)
-        print('Number of total eyes: %i' % total_images)
-
-        for id in keys_dmer:
-            self.ids.append(id)
-            self.labels.append(0)
-        for id in keys_dmenr:
-            self.ids.append(id)
-            self.labels.append(1)
-
-        return self.ids, self.labels
-
-    def get_index(self, id):
-        return self.ids.index(id)
-
-    def get_ids(self, indexes=None):
-        if indexes is not None:
-            ids = []
-            for index in indexes:
-                ids.append(self.ids[index])
-            return ids
-        else:
-            return self.ids
-
-    # extras
-    @ingredient.capture
-    def _bcva(self, id):
-        return self.get_extra_value('Baseline BCVA (LogMAR)', id)
-    # Central subfield Thickness baseline (μm)
-    @ingredient.capture
-    def _cstb(self, id):
-        return self.get_extra_value('Central subfield Thickness baseline (µm)', id) / 1000
-    # Maximal retina thickness, baseline (µm)
-    @ingredient.capture
-    def _mrtb(self, id):
-        return self.get_extra_value('Maximal retina thickness, baseline (µm)', id) / 1000
-    # HbA1c at DME diagnosis, (%)
-    @ingredient.capture
-    def _hba1c(self, id):
-        return self.get_extra_value('HbA1c at DME diagnosis, (%)', id) / 100
-    # Status post PRP (1-yes, 2-no)
-    @ingredient.capture
-    def _prp(self, id):
-        return self.get_extra_value('Status post PRP (1-yes, 2-no)', id)
-    # Lens status (1-phakic, 2- pseudophakic)
-    @ingredient.capture
-    def _lens(self, id):
-        return self.get_extra_value('Lens status (1-phakic, 2- pseudophakic)', id)   
-    # Diabetic retinopathy (1-NPDR, 2-PDR)
-    @ingredient.capture
-    def _pdr(self, id):
-        return self.get_extra_value('Diabetic retinopathy (1-NPDR, 2-PDR)', id)
-    # Gender (1-male, 2-female)
-    @ingredient.capture
-    def _gender(self, id):
-        return self.get_extra_value('Gender (1-male, 2-female)', id)
-    # Anti-VEGF drug intially injected (1-ranibizumab, 2-aflibercept, 3-bevacizumab)
-    @ingredient.capture
-    def _avegf(self, id):
-        return self.get_extra_value('Anti-VEGF drug intially injected (1-ranibizumab, 2-aflibercept, 3-bevacizumab)', id)
-    # Age at DME diagnosis (years)
-    @ingredient.capture
-    def _age(self, id):
-        return self.get_extra_value('Age at DME diagnosis (years)', id)
-    # duration of DM (months)
-    @ingredient.capture
-    def _duration(self, id):
-        return self.get_extra_value('duration of DM (months)', id) / 492
-
-    def get_extra_value(self, column_name, id):
-        value = self.extras_csv.loc[self.extras_csv['ID'] == id][column_name].values[0]
-        if np.isnan(value):
-            return 0
-        else:
-            return value
-
 def ca(y_true, y_pred):
     return 1 - K.mean(K.abs(y_true - y_pred))
-
-def plot(history, history_save_path, id, counter):
-    # summarize history for accuracy
-    plt.plot(history.history['ca'])
-    plt.plot(history.history['val_ca'])
-    plt.title('model accuracy')
-    plt.ylabel('accuracy')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'test'], loc='upper left')
-    plt.savefig('%s%s/accuracy-%i.png' % (history_save_path, id, counter))
-    plt.clf()
-
-    # summarize history for loss
-    plt.plot(history.history['loss'])
-    plt.plot(history.history['val_loss'])
-    plt.title('model loss')
-    plt.ylabel('loss')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'test'], loc='upper left')
-    plt.savefig('%s%s/loss-%i.png' % (history_save_path, id, counter))
-    plt.clf()
 
 def log_metrics(history, cvscores, epoch, _run):
     """
@@ -500,57 +386,6 @@ def log_metrics(history, cvscores, epoch, _run):
         _run.log_scalar(key, avg_metric[key], epoch)
     cvscores.append(avg_metric)
     log_average_scores([*history], cvscores)
-
-def log_average_scores(keys, scores, id = None, write_to_file = False, prediction = None):
-    print('### average:')
-    tmp = {}
-    logs = {}
-    for key in keys:
-        for i, score in enumerate(scores):
-            if key not in tmp:
-                tmp[key]=[]
-            tmp[key].append(score[key])
-        mean = np.mean(tmp[key])
-        std = np.std(tmp[key])
-        max = np.max(tmp[key])
-        min = np.min(tmp[key])
-
-        if key not in logs:
-            logs[key] = {}    
-        logs[key]['val'] = mean
-        logs[key]['std'] = std
-        logs[key]['max'] = max
-        logs[key]['min'] = min
-
-        if 'ca' in key:
-            print('avg %s:  %.2f%% (+/- %.2f) (max: %.2f%%) (min: %.2f%%)'  % (key, mean * 100, std * 100, max * 100, min * 100))
-        else:
-            print('avg %s:  %.2f (+/- %.2f) (max: %.2f) (min: %.2f)'  % (key, mean, std, max, min))
-    
-    if write_to_file:
-        write_average_scores(logs, id, prediction)
-
-@ingredient.capture
-def write_average_scores(logs, id, prediction, history_save_path, extras):
-    stats_file = '%sstatistics.csv' % (history_save_path)
-    with open(stats_file, mode='a') as csv_file:
-        fieldnames = ['id', 'val_ca', 'val_ca_std', 'val_ca_min', 'val_ca_max', 'val_loss', 'val_loss_std', 'val_loss_min', 'val_loss_max', 'loss', 'loss_std', 'loss_min', 'loss_max', 'ca', 'ca_std', 'ca_min', 'ca_max', 'prediction', 'extras']
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-        if os.stat(stats_file).st_size == 0:
-            writer.writeheader()
-        row = {} 
-        row['id'] = id
-        row['prediction'] = prediction
-        seperator = ';'
-        row['extras'] = seperator.join(sorted(extras))
-        for key in logs:
-            if 'lr' in key:
-                continue
-            row[key] = logs[key]['val'] 
-            row[key + '_std'] = logs[key]['std']
-            row[key + '_min'] = logs[key]['min']
-            row[key + '_max'] = logs[key]['max']
-        writer.writerow(row)
 
 def static_test_data(generator, validation_ids = []):
     train_ids = []
@@ -575,7 +410,7 @@ def static_test_data(generator, validation_ids = []):
     return train_indexes, test_indexes
 
 @ingredient.capture
-def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all, validation_ids, use_validation, n_splits, predictions_save_path):
+def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all, validation_ids, use_validation, n_splits, n_repeats, predictions_save_path, metrics):
     id = _run._id
     # fix random seed for reproducibility
     seed = 7
@@ -584,7 +419,8 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     seed = random.randint(1, 100)
     print('Seed:', seed)
 
-    n_repeats = 2
+    # metrics
+    val_metric = 'val_' + metrics
 
     # define 10-fold cross validation test harness
     # kfold = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
@@ -602,8 +438,8 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
     history_id_path = "%s%s/" % (history_save_path, id)
     total_path = history_id_path + 'weights-improvement-{val_ca:.2f}.hdf5'
     # total_path = history_id_path + 'weights-improvement-{epoch:02d}-{val_ca:.2f}.hdf5'
-    checkpoint = ModelCheckpoint(total_path, monitor='val_ca', verbose=0, save_best_only=True, mode='max')
-    es = EarlyStopping(monitor='val_ca', mode='max', verbose=2, patience=patience)
+    checkpoint = ModelCheckpoint(total_path, monitor=val_metric, verbose=0, save_best_only=True, mode='max')
+    es = EarlyStopping(monitor=val_metric, mode='max', verbose=2, patience=patience)
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=10, min_lr=0.001)
     
     history = None
@@ -627,6 +463,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
 
         # create model
         model = EyesMonthsClassifier().create_model()
+        # print(model.summary())
 
         # plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
 
@@ -640,6 +477,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
 
         # Fit the model
         history = model.fit_generator(generator, validation_data=(testX, testY), epochs=epochs, verbose=verbose, callbacks=callbacks_list)
+        # history = model.fit_generator(generator, epochs=epochs, verbose=verbose, callbacks=callbacks_list)
 
         # load model with best val_ca
         # model.load_weights(tmp_path)
@@ -697,10 +535,10 @@ def dme_predict(_run, validation_ids):
     # params.set_size_inches((plSize[0]*N, plSize[1]))
     predictions, misses = predict(model, generator, predictions)
 
-    prediction_summary(predictions, misses)
+    predictions_summary(predictions, misses)
 
-def predict(model, generator, predictions = {}, validation_ids = None, print=False):
-    if print:
+def predict(model, generator, predictions = {}, validation_ids = None, shouldPrint=False):
+    if shouldPrint:
         print("[INFO] classifying images...")
     predictions_responder_values = []
     predictions_non_responder_values = [] 
@@ -727,7 +565,7 @@ def predict(model, generator, predictions = {}, validation_ids = None, print=Fal
         # neg
         predictions_non_responder_values.append(prob[0,1])
 
-        if print:
+        if shouldPrint:
             print('[INFO] Predict %s [ %s ] : %s => %s' % (item, validation, prediction, prob))
         # idxs = np.argsort(proba)[::-1][:2]
 
@@ -739,127 +577,32 @@ def predict(model, generator, predictions = {}, validation_ids = None, print=Fal
 
     return predictions, misses, validations
 
-def plot(predictions_ids, predictions_responder_values, predictions_non_responder_values, predictions_miss):
-    # r/n-r
-    plot_predictions('responder', '', predictions_ids, predictions_responder_values, predictions_miss['x'], predictions_miss['y_r'])
-    plot_predictions('non-responder', '', predictions_ids, predictions_non_responder_values, predictions_miss['x'], predictions_miss['y_nr'])
-    # sorted
-    top_responder = ''
-    top_non_responder = ''
-    list1, list2 = zip(*sorted(zip(predictions_responder_values, predictions_ids), reverse=True))
-    plot_predictions('sorted-responder', 'top %s' % top_responder, list2, list1, predictions_miss['x'], predictions_miss['y_r'])
-    
-    # for i in list2:
-    #     plot_image(i, list1[i], 'n-r' if i in predictions_miss else 'r')
-
-    list1, list2 = zip(*sorted(zip(predictions_non_responder_values, predictions_ids), reverse=True))
-    plot_predictions('sorted-non-responder', 'top %s' % top_non_responder, list2, list1, predictions_miss['x'], predictions_miss['y_nr'])
-    
-    
-def plot_image(i, predictions_array, true_label, img):
-  predictions_array, true_label, img = predictions_array, true_label, img[i]
-  plt.grid(False)
-  plt.xticks([])
-  plt.yticks([])
-
-  plt.imshow(img, cmap=plt.cm.binary)
-
-  predicted_label = np.argmax(predictions_array)
-  if predicted_label == true_label:
-    color = 'blue'
-  else:
-    color = 'red'
-
-  plt.xlabel("{} {:2.0f}% ({})".format(class_names[predicted_label],
-                                100*np.max(predictions_array),
-                                class_names[true_label]),
-                                color=color)
-
-def plot_value_array(i, predictions_array, true_label):
-  predictions_array, true_label = predictions_array, true_label[i]
-  plt.grid(False)
-  plt.xticks(range(10))
-  plt.yticks([])
-  thisplot = plt.bar(range(10), predictions_array, color="#777777")
-  plt.ylim([0, 1])
-  predicted_label = np.argmax(predictions_array)
-
-  thisplot[predicted_label].set_color('red')
-  thisplot[true_label].set_color('blue')
-
-
-def get_prediction(prediction):
-    if prediction[0, 0] > prediction[0, 1]:
-        return 'r ', prediction[0, 0]
-    else:
-        return 'nr', prediction[0, 1]
-
-def plot_predictions(title, label, ids, values, misses_ids, misses_values):
-    plt.xlabel('ID')
-    plt.ylabel('Confidence')
-
-    plt.title('Prediction: %s %s' % (title, label) )
-    plt.plot(ids, values, 'bs')
-    tmp_ids = []
-    tmp_values = []
-    for i, id in enumerate(misses_ids):
-        if id in ids:
-            tmp_ids.append(id)
-            tmp_values.append(misses_values[i])
-    plt.plot(tmp_ids, tmp_values, 'ro')
-    plt.savefig('prediction-%s.png' % title, bbox_inches='tight')
-    # plt.show()
-    plt.clf()
-
-def log_average_predictions(predictions, predictions_save_path, run_id, validations = {}):
-    data = []
+def predictResponder(model, generator, predictions = {}, validation_ids = None, shouldPrint=False):
+    if shouldPrint:
+        print("[INFO] classifying images...")
+    # predictions_responder_values = []
+    # predictions_non_responder_values = [] 
+    # predictions_miss = {'x': [], 'y_r': [], 'y_nr': []}
+    predictions_ids = validation_ids if validation_ids is not None else sorted(generator.get_ids())
     misses = []
-    prob = {}
-    fieldnames = ['id', 'responder prediction (rp)', 'rp-std', 'rp-min', 'rp-max', 'non-responder prediction (nrp)', 'nrp-std', 'nrp-min', 'nrp-max', 'correct']
-    if not os.path.exists(predictions_save_path):
-        os.makedirs(predictions_save_path)
-    for i,id in enumerate(predictions):
-        responder_predictions = []
-        non_responder_predictions = []
-        for p in predictions[id]:
-            responder_predictions.append(p[0,0])
-            non_responder_predictions.append(p[0,1])
-        r_p_mean = round(np.mean(responder_predictions) * 100, 2)
-        r_p_std = round(np.std(responder_predictions) * 100, 2)
-        r_p_min = round(np.min(responder_predictions) * 100, 2)
-        r_p_max = round(np.max(responder_predictions) * 100, 2)
-        nr_p_mean = round(np.mean(non_responder_predictions) * 100, 2)
-        nr_p_std = round(np.std(non_responder_predictions) * 100, 2)
-        nr_p_min = round(np.min(non_responder_predictions) * 100, 2)
-        nr_p_max = round(np.max(non_responder_predictions) * 100, 2)
-        validation = validations[id]
-        # get prediction of mean
-        prob[0, 0] = r_p_mean
-        prob[0, 1] = nr_p_mean
-        prediction, p_score = get_prediction(prob)
-        if validation == ' ':
-            misses.append(id)
-        print('%s => %s [%s] : [r] = %.2f%% (+/- %.2f) (min: %.2f%%) (max: %.2f%%) [n-r] = %.2f%% (+/- %.2f) (min: %.2f%%) (max: %.2f%%)'  % (id, prediction, validation, r_p_mean, r_p_std, r_p_min, r_p_max, nr_p_mean, nr_p_std, nr_p_min, nr_p_max))
-        data.append({fieldnames[0]: id, fieldnames[1]: r_p_mean, fieldnames[2]: r_p_std, fieldnames[3]: r_p_min, fieldnames[4]: r_p_max, fieldnames[5]: nr_p_mean, fieldnames[6]: nr_p_std, fieldnames[7]: nr_p_min, fieldnames[8]: nr_p_max, fieldnames[9]: validation})
-    # write to csv
-    with open('%spredictions-%s.csv' % (predictions_save_path,run_id), mode='w') as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in data:
-            writer.writerow(row)
-    # stats
-    prediction_accuracy = predictions_summary(predictions, misses)
+    validations = {}
+    
+    for item in predictions_ids:
+        imageX, imageY = generator.data_generation([generator.get_index(item)], False, None)
+        prob = model.predict(imageX)
+        print('PRED',item, prob, imageY)
+        
+        # if shouldPrint:
+        #     print('[INFO] Predict %s [ %s ] : %s => %s' % (item, validation, prediction, prob))
+        # idxs = np.argsort(proba)[::-1][:2]
 
-    return prediction_accuracy
+        # predictions[item].append(prob)
+        # validations[item] = validation
 
-def predictions_summary(predictions, misses):
-    # log
-    print('#### Stats')
-    count_success = len(predictions) - len(misses)
-    acc = count_success / len(predictions)
-    print('Accuracy: %.2f%%' % acc)
-    print('Success: ', count_success)
-    print('Miss: ', len(misses))
-    print(sorted(misses))
-    return acc
+    # plot
+    # plot(predictions_ids, predictions_responder_values, predictions_non_responder_values, predictions_miss)
+
+    return predictions, misses, validations
+
+
 
