@@ -371,7 +371,8 @@ class EyesNumpySource(object):
 def ca(y_true, y_pred):
     return 1 - K.mean(K.abs(y_true - y_pred))
 
-def log_metrics(history, cvscores, epoch, _run):
+@ingredient.capture
+def log_metrics(history, cvscores, epoch, _run, extras):
     """
     log metrics to cout.txt and metrics.txt 
     :param dict history: history from all epochs {'loss': [0.1, ..], ..} 
@@ -385,7 +386,7 @@ def log_metrics(history, cvscores, epoch, _run):
         print('%s: %f'  % (key, avg_metric[key]))
         _run.log_scalar(key, avg_metric[key], epoch)
     cvscores.append(avg_metric)
-    log_average_scores([*history], cvscores)
+    log_average_scores([*history], cvscores, extras)
 
 def static_test_data(generator, validation_ids = []):
     train_ids = []
@@ -410,7 +411,7 @@ def static_test_data(generator, validation_ids = []):
     return train_indexes, test_indexes
 
 @ingredient.capture
-def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all, validation_ids, use_validation, n_splits, n_repeats, predictions_save_path, metrics):
+def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, patience, test_all, validation_ids, use_validation, n_splits, n_repeats, predictions_save_path, metrics, extras):
     id = _run._id
     # fix random seed for reproducibility
     seed = 7
@@ -500,7 +501,7 @@ def dme_run(_run, title, epochs, model_save_path, history_save_path, verbose, pa
 
     prediction_accuracy = log_average_predictions(predictions, predictions_save_path, id, validations)
 
-    log_average_scores([*(history.history)], cvscores, id, True, prediction_accuracy)
+    log_average_scores([*(history.history)], cvscores, extras, id, True, prediction_accuracy)
     
     # print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
     # _run.log_scalar("average.test.accuracy", "%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))

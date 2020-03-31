@@ -11,10 +11,9 @@ ingredient = Ingredient('logging')
 @ingredient.config
 def cfg():
     scores_save_path = 'path_to_scores'
-    extras = ['bcva','cstb','mrtb','hba1c','prp', 'lens', 'pdr', 'gender', 'avegf', 'age', 'duration']
     
 @ingredient.capture
-def log_average_scores(keys, scores, id = None, write_to_file = False, prediction = None):
+def log_average_scores(keys, scores, extras, id = None, write_to_file = False, prediction = None):
     print('### average:')
     tmp = {}
     logs = {}
@@ -41,10 +40,10 @@ def log_average_scores(keys, scores, id = None, write_to_file = False, predictio
             print('avg %s:  %.2f (+/- %.2f) (max: %.2f) (min: %.2f)'  % (key, mean, std, max, min))
     
     if write_to_file:
-        write_average_scores(logs, id, prediction)
+        write_average_scores(logs, id, prediction, extras)
 
 @ingredient.capture
-def write_average_scores(logs, id, prediction, scores_save_path, extras):
+def write_average_scores(logs, id, prediction, extras, scores_save_path):
     stats_file = '%sstatistics.csv' % (scores_save_path)
     with open(stats_file, mode='a') as csv_file:
         fieldnames = ['id', 'val_ca', 'val_ca_std', 'val_ca_min', 'val_ca_max', 'val_loss', 'val_loss_std', 'val_loss_min', 'val_loss_max', 'loss', 'loss_std', 'loss_min', 'loss_max', 'ca', 'ca_std', 'ca_min', 'ca_max', 'prediction', 'extras']

@@ -16,8 +16,8 @@ ingredients = [dme_ingredient, extras_ingredient, logging_ingredient]
 
 ex = Experiment('dme',  ingredients)
 
-# path = ''
-path = '/scratch/ws/1/trng859b-dme/'
+path = ''
+# path = '/scratch/ws/1/trng859b-dme/'
 
 ##############
 ## observer ##
@@ -90,7 +90,6 @@ def update_cfg():
 @logging_ingredient.config
 def update_cfg():
     scores_save_path = path + 'logs/'
-    extras = extras
 
 @ex.automain
 def run(_run, title, dme):
