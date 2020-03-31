@@ -196,7 +196,7 @@ class Extras():
             #     else:
             #         extras[i] = 0)
             #         extras[i] = 1)
-            # if extra == 'no-extras':
-            #     extras[i] = 0)
+            if extra == 'no-extras':
+                extras[i] = 0
             # print(i, extra, extras)
         return extras, 0 if 0 in extras_msk else 1

@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --time=26:00:00
 #SBATCH -J "dme-no_extra"
-#SBATCH --output=/scratch/ws/trng859b-dme/experiment-master-%j-no_extras-even.out
+#SBATCH --output=/scratch/ws/1/trng859b-dme/experiment-master-%j-no_extras-even.out
 #SBATCH --mem=19192
 
 
