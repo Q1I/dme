@@ -37,6 +37,8 @@ extras = [
 'cstb',
 'mrtb',
 'hba1c',
+'surgery_yes', 'surgery_no',
+'eye_right', 'eye_left',
 'prp_yes', 'prp_no',
 'lens_phakic', 'lens_pseudophakic',
 'pdr_n', 'pdr_p',

@@ -14,6 +14,6 @@
 
 OUTFILE=""
 
-srun python3 main.py with dme.evenly_distributed=True "dme.extras=['gender_male','gender_female']"
+srun python3 main.py with dme.evenly_distributed=True "dme.extras=['gender_male','gender_female']" dme.num_extra=2
 
 exit 0

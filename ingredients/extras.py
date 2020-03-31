@@ -27,6 +27,13 @@ class Extras():
     @ingredient.capture
     def _bcva_delta_m0_m12(self, id, encode = True):
         return self.get_extra_value('Visual acuity change from Month 0 to Month 12 (letters)', id, encode)
+    @ingredient.capture
+    def _bcva_delta_m0_m3(self, id, encode = True):
+        return self.get_extra_value('Visual acuity change baseline to month 3, letters', id, encode)
+    # Eye (1-right, 2-left)
+    @ingredient.capture
+    def _eye(self, id):
+        return self.get_extra_value('Eye (1-right, 2- left)', id, False)
     # Central subfield Thickness baseline (μm)
     @ingredient.capture
     def _cstb(self, id, encode = True):
@@ -71,7 +78,7 @@ class Extras():
     # Surgery during 12 months? (1-yes, 2-no)
     @ingredient.capture
     def _surgery(self, id):
-        return self.get_extra_value('Surgery during 12 months? (1-yes, 2-no)', id)
+        return self.get_extra_value('Surgery during 12 months? (1-yes, 2-no)', id, False)
         
     def get_extra_value(self, column_name, id, encode = True):
         value = self.extras_csv.loc[self.extras_csv['ID'] == id][column_name].values[0]
@@ -117,6 +124,8 @@ class Extras():
             #     extras[i] = self._bcva_m12(id))
             if extra == 'bcva_delta_m0_m12':
                 extras[i], extras_msk[i] = self._bcva_delta_m0_m12(id, encode)
+            if extra == 'bcva_delta_m0_m3':
+                extras[i], extras_msk[i] = self._bcva_delta_m0_m3(id, encode)
             if extra == 'cstb':
                 extras[i], extras_msk[i] = self._cstb(id, encode)
             if extra == 'mrtb':
@@ -127,6 +136,16 @@ class Extras():
                 extras[i], extras_msk[i] = self._age(id, encode)
             # if extra == 'duration':
             #     extras[i] = self._duration(id))
+            if extra.startswith('eye_'):
+                eye = self._eye(id)
+                if eye[0] == 1: # 1-right, 2-left
+                    eye_right = 1
+                    eye_left = 0
+                else:
+                    eye_right = 0
+                    eye_left = 1
+                extras[i] = eye_right if extra == 'eye_right' else eye_left
+                extras_msk[i] = eye[1]
             if extra.startswith('prp_'):
                 prp = self._prp(id)
                 if prp[0] == 1: # 1-yes, 2-no
@@ -188,14 +207,16 @@ class Extras():
                 if extra == 'avegf_bevacizumab':
                     extras[i] = avegf_bevacizumab
                 extras_msk[i] = avegf[1]
-            # if extra == 'surgery':
-            #     surgery = self._surgery(id)
-            #     if surgery == 1: 
-            #         extras[i] = 1)
-            #         extras[i] = 0)
-            #     else:
-            #         extras[i] = 0)
-            #         extras[i] = 1)
+            if extra.startswith('surgery_'): # 1-yes, 2-no
+                surgery = self._surgery(id)
+                if surgery[0] == 1: 
+                    surgery_yes = 1
+                    surgery_no = 0
+                else:
+                    surgery_yes = 0
+                    surgery_no = 1
+                extras[i] = surgery_no if extra == 'surgery_no' else surgery_yes
+                extras_msk[i] = surgery[1]
             if extra == 'no-extras':
                 extras[i] = 0
             # print(i, extra, extras)
